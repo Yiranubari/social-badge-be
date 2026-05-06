@@ -1,29 +1,32 @@
-# fastapi-starter
+# social-badge-be
 
-A standard FastAPI + Postgres starter using async SQLAlchemy 2.0, Alembic migrations, and `uv` for dependency management.
+Backend API for the Social Badge platform — built with FastAPI, async SQLAlchemy 2.0, Alembic migrations, and `uv` for dependency management.
 
 ---
 
 ## Stack
 
-| Layer | Choice |
-|---|---|
-| Web framework | FastAPI (`fastapi[standard]`) |
-| Server | Uvicorn (via `fastapi dev` / `fastapi run`) |
-| ORM | SQLAlchemy 2.0 (async) |
-| DB driver | `asyncpg` |
-| Migrations | Alembic (async-aware) |
-| Config | `pydantic-settings` (reads `.env`) |
-| Package manager | `uv` |
-| Tests | `pytest` + `pytest-asyncio` + `httpx.AsyncClient` |
-| Python | 3.13+ |
+| Layer                | Choice                                            |
+| -------------------- | ------------------------------------------------- |
+| Web framework        | FastAPI (`fastapi[standard]`)                     |
+| Server               | Uvicorn (via `fastapi dev` / `fastapi run`)       |
+| ORM                  | SQLAlchemy 2.0 (async)                            |
+| DB driver            | `asyncpg`                                         |
+| Migrations           | Alembic (async-aware)                             |
+| Config               | `pydantic-settings` (reads `.env`)                |
+| Package manager      | `uv`                                              |
+| Linting / Formatting | Ruff                                              |
+| Type checking        | mypy (strict)                                     |
+| Tests                | `pytest` + `pytest-asyncio` + `httpx.AsyncClient` |
+| CI                   | GitHub Actions                                    |
+| Python               | 3.13+                                             |
 
 ---
 
 ## Project structure
 
 ```
-fastapi-starter/
+social-badge-be/
 ├── app/
 │   ├── main.py                # FastAPI() instance, mounts the API router
 │   ├── core/
@@ -47,7 +50,12 @@ fastapi-starter/
 ├── tests/
 │   ├── conftest.py            # AsyncClient fixture
 │   └── test_health.py
+├── .github/
+│   ├── workflows/
+│   │   └── ci.yml             # CI pipeline (lint, type-check, test)
+│   └── PULL_REQUEST_TEMPLATE.md
 ├── .env.example
+├── .pre-commit-config.yaml    # Ruff hooks for local dev
 ├── alembic.ini
 ├── pyproject.toml
 └── uv.lock
@@ -70,13 +78,21 @@ fastapi-starter/
 - [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - A running Postgres instance (local, Docker, or remote)
 
-### 2. Install
+### 2a. Install
 
 ```bash
-uv sync
+uv sync --dev
 ```
 
-This installs both runtime and dev dependencies (`pytest`, `httpx`, etc.).
+This installs both runtime and dev dependencies (`pytest`, `ruff`, `mypy`, etc.).
+
+### 2b. Set up pre-commit hooks
+
+```bash
+uv run pre-commit install
+```
+
+This installs git hooks that run `ruff check --fix` and `ruff format` on every commit.
 
 ### 3. Configure
 
@@ -93,9 +109,9 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/fastapi_start
 ### 4. Create the database
 
 ```bash
-createdb fastapi_starter
+createdb social_badge
 # or, with psql:
-psql -U postgres -c "CREATE DATABASE fastapi_starter;"
+psql -U postgres -c "CREATE DATABASE social_badge;"
 ```
 
 ### 5. Run migrations
@@ -122,13 +138,55 @@ Open:
 
 ---
 
-## Running tests
+## Code quality
+
+### Linting and formatting
+
+```bash
+# Check for lint errors
+uv run ruff check .
+
+# Auto-fix lint errors
+uv run ruff check --fix .
+
+# Check formatting
+uv run ruff format --check .
+
+# Apply formatting
+uv run ruff format .
+```
+
+Ruff enforces: pycodestyle (`E`/`W`), pyflakes (`F`), isort (`I`), pyupgrade (`UP`), bugbear (`B`), no-print (`T20`), bandit/security (`S`), and async anti-patterns (`ASYNC`). Configuration lives in `pyproject.toml`.
+
+### Type checking
+
+```bash
+uv run mypy app/
+```
+
+mypy runs in strict mode. All function signatures must include type hints.
+
+### Running tests
 
 ```bash
 uv run pytest
 ```
 
 `pytest-asyncio` is set to `auto` mode in `pyproject.toml`, so async tests don't need a decorator. Tests use `httpx.AsyncClient` with `ASGITransport` — no live server required.
+
+---
+
+## CI
+
+GitHub Actions runs three jobs on every push and PR to `main`:
+
+| Job               | What it checks                                     |
+| ----------------- | -------------------------------------------------- |
+| **Lint & Format** | `ruff check` + `ruff format --check`               |
+| **Type Check**    | `mypy app/` (strict)                               |
+| **Test**          | `pytest` against a PostgreSQL 17 service container |
+
+All three must pass before a PR can be merged. The workflow is defined in `.github/workflows/ci.yml`.
 
 ---
 
@@ -152,15 +210,15 @@ uv run alembic upgrade head
 
 ### Useful commands
 
-| Command | What it does |
-|---|---|
+| Command                                    | What it does                            |
+| ------------------------------------------ | --------------------------------------- |
 | `alembic revision --autogenerate -m "msg"` | Diff models vs DB and write a migration |
-| `alembic revision -m "msg"` | Empty migration (write SQL by hand) |
-| `alembic upgrade head` | Apply all pending migrations |
-| `alembic upgrade +1` / `downgrade -1` | Step forward/back one revision |
-| `alembic current` | Show what's applied |
-| `alembic history` | Full migration chain |
-| `alembic downgrade base` | Wipe back to empty (dev only) |
+| `alembic revision -m "msg"`                | Empty migration (write SQL by hand)     |
+| `alembic upgrade head`                     | Apply all pending migrations            |
+| `alembic upgrade +1` / `downgrade -1`      | Step forward/back one revision          |
+| `alembic current`                          | Show what's applied                     |
+| `alembic history`                          | Full migration chain                    |
+| `alembic downgrade base`                   | Wipe back to empty (dev only)           |
 
 ### Rules of thumb
 
