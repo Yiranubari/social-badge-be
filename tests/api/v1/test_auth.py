@@ -6,15 +6,6 @@ from httpx import AsyncClient
 from app.core.exceptions import EmailDeliveryError
 
 
-@pytest.fixture
-def valid_signup_payload() -> dict[str, str]:
-    return {
-        "name": "API Test User",
-        "email": "apitest@example.com",
-        "password": "StrongPassword1!",  # noqa: S106
-    }
-
-
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
 async def test_signup_endpoint_success(
     mock_email: AsyncMock, client: AsyncClient, valid_signup_payload: dict[str, str]
@@ -84,6 +75,71 @@ async def test_signup_endpoint_rate_limit(
 
     # 11th request should be rate-limited
     response = await client.post("/api/v1/auth/signup", json=valid_signup_payload)
+    assert response.status_code == 429
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Rate limit exceeded"
+
+
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_forgot_password_endpoint_existing_email(
+    mock_reset_email: AsyncMock,
+    mock_verify_email: AsyncMock,
+    client: AsyncClient,
+    valid_signup_payload: dict[str, str],
+) -> None:
+    await client.post("/api/v1/auth/signup", json=valid_signup_payload)
+
+    response = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": valid_signup_payload["email"]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == (
+        "If an account with that email exists, a password reset email has been sent."
+    )
+    mock_reset_email.assert_called_once()
+
+
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_forgot_password_endpoint_nonexistent_email(
+    mock_reset_email: AsyncMock, client: AsyncClient
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": "nobody@example.com"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == (
+        "If an account with that email exists, a password reset email has been sent."
+    )
+    mock_reset_email.assert_not_called()
+
+
+async def test_forgot_password_endpoint_validation_error(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": "not-an-email"},
+    )
+    assert response.status_code == 422
+    data = response.json()
+    assert data["status"] == "error"
+
+
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_forgot_password_endpoint_rate_limit(
+    mock_reset_email: AsyncMock, client: AsyncClient
+) -> None:
+    payload = {"email": "ratelimit@example.com"}
+    for _ in range(10):
+        await client.post("/api/v1/auth/forgot-password", json=payload)
+
+    response = await client.post("/api/v1/auth/forgot-password", json=payload)
     assert response.status_code == 429
     data = response.json()
     assert data["status"] == "error"
