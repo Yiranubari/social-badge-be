@@ -26,10 +26,11 @@ def _build_verification_html(token: str) -> str:
 
 
 def _build_account_lock_html() -> str:
+    minutes = settings.LOCKOUT_WINDOW // 60
     return (
         "<h2>Your Social Badge account has been temporarily locked</h2>"
         "<p>We detected too many failed login attempts on your account.</p>"
-        "<p>Your account has been locked for 15 minutes. "
+        f"<p>Your account has been locked for {minutes} minutes. "
         "Please try again after that time.</p>"
         "<p>If this wasn't you, we recommend changing your password "
         "once you regain access.</p>"

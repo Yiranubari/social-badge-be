@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     VERIFICATION_TOKEN_TTL_MINUTES: int = 30
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    SECRET_KEY: str = ""
-    ALGORITHM: str = "HS256"
+    SECRET_KEY: str  # required; no default — fail at startup if unset
+    ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
 
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"

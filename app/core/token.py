@@ -62,6 +62,7 @@ def create_access_token(user_id: UUID) -> str:
         "sub": str(user_id),
         "exp": expire,
         "iat": datetime.now(UTC),
+        "jti": secrets.token_hex(16),
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -75,6 +76,7 @@ def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
         "exp": expire,
         "iat": datetime.now(UTC),
         "type": "refresh",
+        "jti": secrets.token_hex(16),
     }
     return jwt.encode(
         payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM

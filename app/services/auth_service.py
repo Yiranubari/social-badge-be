@@ -137,7 +137,8 @@ async def check_lockout(redis: Redis, identifier: str):
 
     if attempts and int(attempts) >= settings.MAX_LOGIN_ATTEMPTS:
         ttl = await redis.ttl(key)
-        raise AccountLockedError(f"Account locked. Try again in {ttl // 60} minutes.")
+        minutes = max(1, ttl // 60) if ttl and ttl > 0 else 1
+        raise AccountLockedError(f"Account locked. Try again in {minutes} minute(s).")
 
 
 async def increment_failed_attempts(redis: Redis, identifier: str):

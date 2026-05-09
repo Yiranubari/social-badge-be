@@ -93,12 +93,12 @@ async def register(
     status_code=status.HTTP_200_OK,
     summary="Login an existing user",
     description=(
-        "Validates email and password against users table."
-        "Returns generic 401 'Invalid credentials' for wrong email OR wrong password."
-        "Returns 403 if email not verified."
-        "Issues 15 min JWT access token on success."
-        "Sets 7 day refresh token as htttOnly cookie."
-        "Prevents no more than 5 failed login attemps in 15 mins."
+        "Validates email and password against users table. "
+        "Returns generic 401 'Invalid credentials' for wrong email OR wrong password. "
+        "Returns 403 if email not verified. "
+        "Issues 15 min JWT access token on success. "
+        "Sets 7 day refresh token as httpOnly cookie. "
+        "Prevents no more than 5 failed login attempts in 15 mins."
     ),
     responses={
         200: {
@@ -124,7 +124,8 @@ async def register(
         401: {"model": ErrorResponse, "description": "Invalid credentials"},
         403: {"model": ErrorResponse, "description": "Email not verified"},
         422: {"model": ErrorResponse, "description": "Validation error in the payload"},
-        423: {"model": ErrorResponse, "description": "Too many failed attemps"},
+        423: {"model": ErrorResponse, "description": "Too many failed attempts"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
     },
 )
 @limiter.limit("20/minute")
@@ -152,7 +153,7 @@ async def login(
     except AccountLockedError as locked_exc:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
-            detail=str(locked_exc) or "Too many failed login attemps.",
+            detail=str(locked_exc) or "Too many failed login attempts.",
         ) from locked_exc
 
     set_refresh_cookie(response, refresh_token)
