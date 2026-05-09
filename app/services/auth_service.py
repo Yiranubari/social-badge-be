@@ -1,7 +1,9 @@
+import asyncio
 import logging
 
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import EmailConflictError, EmailDeliveryError
@@ -32,7 +34,7 @@ async def signup(
     if existing.scalars().first() is not None:
         raise EmailConflictError
 
-    password_hash = hash_password(payload.password)
+    password_hash = await asyncio.to_thread(hash_password, payload.password)
 
     user = User(
         name=payload.name,
@@ -40,7 +42,12 @@ async def signup(
         password_hash=password_hash,
     )
     session.add(user)
-    await session.flush()
+
+    try:
+        await session.flush()
+    except IntegrityError as err:
+        await session.rollback()
+        raise EmailConflictError from err
 
     auth_provider = AuthProvider(
         provider="email",

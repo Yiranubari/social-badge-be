@@ -25,7 +25,11 @@ class SignupRequest(BaseModel):
             "Must contain at least one uppercase, one lowercase, "
             "one number, and one special character."
         ),
-        json_schema_extra={"example": "StrongPassword1!", "minLength": 8},
+        json_schema_extra={
+            "example": "StrongPassword1!",
+            "minLength": 8,
+            "maxLength": 72,  # With bcrypt≥5.0.0, pswds above 72 bytes raise ValueError
+        },
     )
 
     @field_validator("name")
@@ -34,6 +38,13 @@ class SignupRequest(BaseModel):
         if len(val.strip()) < 2:
             raise ValueError("Name must be at least 2 characters long")
         return val.strip()
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, val: str) -> str:
+        if isinstance(val, str):
+            return val.strip().lower()
+        return val
 
     @field_validator("password")
     @classmethod
@@ -82,6 +93,7 @@ class UserResponse(BaseModel):
         description="The email address registered.",
         json_schema_extra={"example": "jane@example.com"},
     )
+
     is_email_verified: bool = Field(
         ...,
         description="Whether the user's email has been verified.",
@@ -105,7 +117,7 @@ class UserResponse(BaseModel):
 
     @field_validator("id", mode="before")
     @classmethod
-    def validate_id(cls, val: Any) -> Any:
-        if val is not None and not isinstance(val, str | bytes | UUID):
+    def convert_uuid(cls, val: Any) -> Any:
+        if val is not None and not isinstance(val, UUID | str | bytes):
             return str(val)
         return val

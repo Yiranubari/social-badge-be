@@ -60,6 +60,12 @@ async def db_session(setup_db: None) -> AsyncIterator[AsyncSession]:
     async with TestingSessionLocal() as session:
         yield session
 
+    async with test_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+
+    await test_engine.dispose()
+
 
 @pytest.fixture
 def fake_redis() -> FakeAsyncRedis:
@@ -91,3 +97,12 @@ async def client(
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def valid_signup_payload() -> dict[str, str]:
+    return {
+        "name": "API Test User",
+        "email": "apitest@example.com",
+        "password": "StrongPassword1!",  # noqa: S106
+    }
