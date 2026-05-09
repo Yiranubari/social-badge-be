@@ -59,9 +59,8 @@ async def store_google_oauth_state(redis: Redis, state: str) -> None:
 
 async def get_google_oauth_state(redis: Redis, state: str) -> bool:
     key = f"{GOOGLE_STATE_PREFIX}{state}"
-    stored = await redis.get(key)
+    stored = await redis.getdel(key)
     if stored is None:
         return False
 
-    await redis.delete(key)
     return True

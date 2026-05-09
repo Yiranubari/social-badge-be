@@ -164,10 +164,13 @@ async def _fetch_google_userinfo(access_token: str) -> dict[str, str | bool | No
             ) from exc
 
     payload = response.json()
+    subject = payload.get("sub")
     email = payload.get("email")
     email_verified = payload.get("email_verified")
     name = payload.get("name")
 
+    if not isinstance(subject, str) or not subject:
+        raise GoogleOAuthError("Google account did not provide a stable account ID")
     if not isinstance(email, str) or not email:
         raise GoogleOAuthError("Google account did not provide an email address")
     if email_verified is not True:
@@ -179,6 +182,7 @@ async def _fetch_google_userinfo(access_token: str) -> dict[str, str | bool | No
     picture_url = picture if isinstance(picture, str) and picture else None
 
     return {
+        "sub": subject,
         "email": email,
         "name": name.strip(),
         "picture": picture_url,
@@ -193,40 +197,59 @@ async def _upsert_google_user(
     Finds or creates a User record based on Google user info,
     and ensures an AuthProvider record exists.
     """
+    google_subject = str(user_info["sub"])
     email = str(user_info["email"])
     name = str(user_info["name"])
     picture = user_info["picture"]
 
-    existing_result = await session.execute(select(User).where(User.email == email))
-    user = existing_result.scalars().first()
-    is_new_user = user is None
-
-    if user is None:
-        user = User(
-            name=name,
-            email=email,
-            password_hash=None,
-            is_email_verified=True,
-            profile_photo_url=picture if isinstance(picture, str) else None,
-        )
-        session.add(user)
-        await session.flush()
-    else:
-        user.is_email_verified = True
-        if isinstance(picture, str):
-            user.profile_photo_url = picture
-
     provider_result = await session.execute(
         select(AuthProvider).where(
-            AuthProvider.user_id == user.id,
             AuthProvider.provider == "google",
+            AuthProvider.provider_user_id == google_subject,
         )
     )
     provider = provider_result.scalars().first()
+
+    if provider is not None:
+        user = await session.get(User, provider.user_id)
+        if user is None:
+            raise GoogleOAuthError("Linked Google account references a missing user")
+        is_new_user = False
+    else:
+        existing_result = await session.execute(select(User).where(User.email == email))
+        user = existing_result.scalars().first()
+        is_new_user = user is None
+
+        if user is None:
+            user = User(
+                name=name,
+                email=email,
+                password_hash=None,
+                is_email_verified=True,
+                profile_photo_url=picture if isinstance(picture, str) else None,
+            )
+            session.add(user)
+            await session.flush()
+        else:
+            if user.password_hash is not None and not user.is_email_verified:
+                raise GoogleOAuthError(
+                    (
+                        "An unverified password account already exists for this email. "
+                        "Please sign in with your password and verify your email "
+                        "before linking Google."
+                    ),
+                    status_code=409,
+                )
+
+            user.is_email_verified = True
+            if isinstance(picture, str):
+                user.profile_photo_url = picture
+
     if provider is None:
         session.add(
             AuthProvider(
                 provider="google",
+                provider_user_id=google_subject,
                 user_id=user.id,
                 label="Google",
             )

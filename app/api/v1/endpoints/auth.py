@@ -96,7 +96,8 @@ async def register(
         307: {"description": "Redirect to Google OAuth consent screen"},
     },
 )
-async def google_login(redis: RedisClient) -> RedirectResponse:
+@limiter.limit("10/minute")
+async def google_login(request: Request, redis: RedisClient) -> RedirectResponse:
     auth_url = await build_google_auth_url(redis)
     return RedirectResponse(
         url=auth_url,
@@ -135,9 +136,15 @@ async def google_login(redis: RedisClient) -> RedirectResponse:
             },
         },
         400: {"model": ErrorResponse, "description": "Google OAuth failed"},
+        409: {
+            "model": ErrorResponse,
+            "description": "Google sign-in could not be safely linked",
+        },
     },
 )
+@limiter.limit("10/minute")
 async def google_callback(
+    request: Request,
     session: DBSession,
     redis: RedisClient,
     code: str = Query(..., description="Google authorization code"),
