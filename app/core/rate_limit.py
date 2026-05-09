@@ -1,11 +1,11 @@
 import os
+import sys
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
-import sys
 
 def is_testing() -> bool:
     """Check if the code is running in a test environment."""
@@ -14,6 +14,7 @@ def is_testing() -> bool:
         or os.getenv("PYTEST_CURRENT_TEST") is not None
         or os.getenv("TESTING") == "True"
     )
+
 
 if is_testing():
     _redis_uri = "memory://"
