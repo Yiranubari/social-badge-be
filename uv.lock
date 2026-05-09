@@ -1332,6 +1332,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "bcrypt" },
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "pydantic-settings" },
     { name = "redis", extra = ["hiredis"] },
     { name = "resend" },
@@ -1345,7 +1346,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "fakeredis", extra = ["lua"] },
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1360,6 +1360,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.1" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
     { name = "resend", specifier = ">=2.30.0" },
@@ -1373,7 +1374,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "fakeredis", extras = ["lua"], specifier = ">=2.35.1" },
-    { name = "httpx", specifier = ">=0.28.0" },
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=8.3.0" },
