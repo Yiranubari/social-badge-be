@@ -10,6 +10,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.auth_provider import AuthProvider
+    from app.models.refresh_tokens import RefreshToken
 
 
 class User(Base):
@@ -37,6 +38,11 @@ class User(Base):
     )
 
     auth_providers: Mapped[list["AuthProvider"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
