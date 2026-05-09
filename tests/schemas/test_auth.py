@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.auth import SignupRequest
+from app.schemas.auth import ForgotPasswordRequest, SignupRequest
 
 
 def test_signup_request_valid() -> None:
@@ -60,3 +60,15 @@ def test_signup_request_invalid_password(
         SignupRequest(**data)
 
     assert expected_error in str(exc_info.value)
+
+
+def test_forgot_password_request_valid() -> None:
+    data = {"email": "jane.doe@example.com"}
+    req = ForgotPasswordRequest(**data)
+    assert req.email == "jane.doe@example.com"
+
+
+def test_forgot_password_request_invalid_email() -> None:
+    data = {"email": "not-an-email"}
+    with pytest.raises(ValidationError):
+        ForgotPasswordRequest(**data)

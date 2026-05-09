@@ -62,6 +62,16 @@ class SignupRequest(BaseModel):
         return val
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Schema for the forgot password request payload."""
+
+    email: EmailStr = Field(
+        ...,
+        description="The email address associated with the user account.",
+        json_schema_extra={"example": "dave@example.com"},
+    )
+
+
 class UserResponse(BaseModel):
     """Schema for the user details returned upon signup."""
 

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
     FRONTEND_URL: str = "http://localhost:5173"
 
+    PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> Self:
         if self.ENVIRONMENT == "production":

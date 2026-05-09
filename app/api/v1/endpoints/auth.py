@@ -5,9 +5,9 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError
 from app.core.rate_limit import limiter
-from app.schemas.auth import SignupRequest, UserResponse
+from app.schemas.auth import ForgotPasswordRequest, SignupRequest, UserResponse
 from app.schemas.response import ErrorResponse, SuccessResponse
-from app.services.auth_service import signup
+from app.services.auth_service import request_password_reset, signup
 
 router = APIRouter()
 
@@ -79,4 +79,51 @@ async def register(
     return SuccessResponse(
         message=message,
         data=UserResponse.model_validate(user),
+    )
+
+
+@router.post(
+    "/forgot-password",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Request a password reset email",
+    description=(
+        "Initiates the password reset process by generating a reset token and "
+        "dispatching it via email."
+    ),
+    responses={
+        200: {
+            "description": "Password reset email sent (if the email is registered)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": (
+                            "If an account with that email exists, a password reset "
+                            "email has been sent."
+                        ),
+                        "data": None,
+                    }
+                }
+            },
+        },
+        422: {"model": ErrorResponse, "description": "Validation error in the payload"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+    },
+)
+@limiter.limit("10/minute")
+async def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    session: DBSession,
+    redis: RedisClient,
+) -> Any:
+    await request_password_reset(session, redis, payload)
+
+    return SuccessResponse(
+        message=(
+            "If an account with that email exists, "
+            "a password reset email has been sent."
+        ),
+        data=None,
     )

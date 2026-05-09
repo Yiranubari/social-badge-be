@@ -1,0 +1,23 @@
+name: CD
+
+on:
+  push:
+    branches: [main, staging]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/social-badge-be
+            git pull origin ${{ github.ref_name }}
+            uv sync
+            uv run alembic upgrade head
+            pm2 restart social-badge-be
