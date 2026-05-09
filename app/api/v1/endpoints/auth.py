@@ -6,7 +6,12 @@ from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError
 from app.core.rate_limit import limiter
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, SignupRequest, UserResponse, VerifyEmailRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    SignupRequest,
+    UserResponse,
+    VerifyEmailRequest,
+)
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import request_password_reset, signup
 
@@ -128,8 +133,8 @@ async def forgot_password(
         ),
         data=None,
     )
-  
-  
+
+
 @router.post(
     "/verify-email",
     response_model=SuccessResponse[dict],
@@ -174,4 +179,3 @@ async def verify_email(
     await session.commit()
 
     return SuccessResponse(message="Email verified", data={"next": "onboarding"})
-
