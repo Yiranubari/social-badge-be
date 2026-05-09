@@ -903,27 +903,6 @@ paths:
                     type: string
                     example: "Token has expired. Please request a new verification email."
 
-  /auth/me:
-    get:
-      tags: [Auth]
-      summary: Get current authenticated organiser
-      operationId: getCurrentUser
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: Current user profile
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserProfile"
-        "401":
-          description: Not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
   /templates/instances:
     get:
       tags: [Template Instances]
