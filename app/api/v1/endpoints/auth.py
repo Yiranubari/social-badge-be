@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status, Query
 
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError
@@ -8,6 +8,7 @@ from app.core.rate_limit import limiter
 from app.schemas.auth import SignupRequest, UserResponse
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import signup
+from app.models.user import User
 
 router = APIRouter()
 
@@ -80,3 +81,50 @@ async def register(
         message=message,
         data=UserResponse.model_validate(user),
     )
+
+
+@router.post(
+    "/verify-email",
+    response_model=SuccessResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Verify email token",
+    responses={
+        200: {"description": "Email verified successfully"},
+        400: {"model": ErrorResponse, "description": "User already verified"},
+        401: {"model": ErrorResponse, "description": "Token expired or invalid"},
+    },
+)
+async def verify_email(
+    session: DBSession,
+    redis: RedisClient,
+    token: str = Query(..., description="The one-time verification token"),
+) -> Any:
+    token_key = f"verification_token:{token}"
+    user_id = await redis.get(token_key)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please request a new verification email",
+        )
+
+    user = await session.get(User, user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please request a new verification email",
+        )
+
+    if user.is_email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already verified",
+        )
+
+    user.is_email_verified = True
+    session.add(user)
+    await session.commit()
+    await redis.delete(token_key)
+
+    return SuccessResponse(message="Email verified", data={"next": "onboarding"})
