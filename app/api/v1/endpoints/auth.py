@@ -1,14 +1,14 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status, Query
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError
 from app.core.rate_limit import limiter
+from app.models.user import User
 from app.schemas.auth import SignupRequest, UserResponse
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import signup
-from app.models.user import User
 
 router = APIRouter()
 

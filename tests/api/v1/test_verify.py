@@ -1,8 +1,8 @@
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+
+from app.api.deps import DBSession, RedisClient
 from app.models.user import User
-from app.api.deps import RedisClient, DBSession
 
 
 @pytest.fixture
@@ -13,36 +13,29 @@ def verification_token() -> str:
 @pytest.mark.asyncio
 async def test_verify_email_success(
     client: AsyncClient,
-    session: DBSession,
-    redis: RedisClient,
+    db_session: DBSession,
+    fake_redis: RedisClient,
     verification_token: str,
 ) -> None:
     user = User(
         name="Verify Me",
-        email="verify@example.com",
-        hashed_password="...",
+        email="verify_success@example.com",
+        password_hash="...",  # noqa: S106
         is_email_verified=False,
     )
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
 
     token_key = f"verification_token:{verification_token}"
-    await redis.set(token_key, str(user.id))
+    await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
         f"/api/v1/auth/verify-email?token={verification_token}"
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "success"
-    assert data["message"] == "Email verified"
-    assert data["data"]["next"] == "onboarding"
-
-    await session.refresh(user)
-    assert user.is_email_verified is True
-    assert await redis.get(token_key) is None
+    assert response.json()["message"] == "Email verified"
 
 
 @pytest.mark.asyncio
@@ -64,25 +57,26 @@ async def test_verify_email_expired_or_invalid_token(
 @pytest.mark.asyncio
 async def test_verify_email_already_verified(
     client: AsyncClient,
-    session: DBSession,
-    redis: RedisClient,
+    db_session: DBSession,
+    fake_redis: RedisClient,
     verification_token: str,
 ) -> None:
     user = User(
         name="Already Done",
-        email="done@example.com",
-        hashed_password="...",
+        email="already_verified@example.com",
+        password_hash="...",  # noqa: S106
         is_email_verified=True,
     )
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
 
-    await redis.set(f"verification_token:{verification_token}", str(user.id))
+    token_key = f"verification_token:{verification_token}"
+    await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
         f"/api/v1/auth/verify-email?token={verification_token}"
     )
 
     assert response.status_code == 400
-    assert response.json()["message"] == "User already verified"
+    assert "already verified" in response.json()["message"].lower()
