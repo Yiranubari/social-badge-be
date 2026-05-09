@@ -1,0 +1,1600 @@
+openapi: 3.0.3
+
+info:
+  title: Social Badge API
+  description: |
+    Backend API for the Social Badge platform — a digital badge builder that enables
+    event organisers to create customisable badge templates and participants to
+    personalise and share badges on social media.
+  version: 1.0.0
+  contact:
+    name: Social Badge Team
+
+servers:
+  - url: http://127.0.0.1:8000/api/v1
+    description: Local development server
+
+tags:
+  - name: Health
+    description: API health check
+  - name: Auth
+    description: Organiser authentication (Regular logi/signup or Google)
+  - name: Templates
+    description: Badge template creation and management (organiser only)
+  - name: Explore
+    description: Public template discovery
+  - name: Badges
+    description: Badge generation, download, and sharing (participant flow)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /auth/login or /auth/signup
+
+  schemas:
+    SignupRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: organiser@example.com
+        password:
+          type: string
+          minLength: 8
+          example: S3cureP@ssword
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: organiser@example.com
+        password:
+          type: string
+          example: S3cureP@ssword
+
+    GoogleAuthRequest:
+      type: object
+      required: [id_token]
+      properties:
+        id_token:
+          type: string
+          description: Google OAuth2 ID token from the client-side Google Sign-In flow
+          example: eyJhbGciOiJSUzI1NiIsImtpZCI6...
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        token_type:
+          type: string
+          example: bearer
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+        email:
+          type: string
+          format: email
+          example: organiser@example.com
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-05-04T10:00:00Z"
+
+    
+    TemplateVisibility:
+      type: string
+      enum: [public, link_only]
+      description: >
+        `public` — listed on the Explore page and accessible to everyone.
+        `link_only` — accessible only via the direct template URL.
+
+    TextPlaceholder:
+      type: object
+      required: [key, label, required]
+      properties:
+        key:
+          type: string
+          description: Internal identifier for this placeholder (e.g. "participant_name")
+          example: participant_name
+        label:
+          type: string
+          description: Human-readable label shown to participants
+          example: Your Name
+        required:
+          type: boolean
+          example: true
+
+    CreateTemplateRequest:
+      type: object
+      required: [name, visibility]
+      properties:
+        name:
+          type: string
+          example: DevFest Lagos 2026
+        description:
+          type: string
+          example: Show the world you're attending DevFest Lagos!
+        visibility:
+          $ref: '#/components/schemas/TemplateVisibility'
+        logo_url:
+          type: string
+          format: uri
+          description: URL of the uploaded event logo image
+          example: https://cdn.socialbadge.io/logos/devfest.png
+        style_variant:
+          type: string
+          description: Predefined style/colour variant key (if applicable)
+          example: dark_blue
+        text_placeholders:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextPlaceholder'
+        has_participant_photo:
+          type: boolean
+          description: Whether participants will upload a personal photo
+          default: true
+        default_caption:
+          type: string
+          example: "I'm attending DevFest Lagos 2026!"
+        hashtags:
+          type: array
+          items:
+            type: string
+          example: ["#DevFestLagos", "#GDG"]
+        link:
+          type: string
+          format: uri
+          example: https://devfest.gdglagos.com
+
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/TemplateVisibility'
+        logo_url:
+          type: string
+          format: uri
+        style_variant:
+          type: string
+        text_placeholders:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextPlaceholder'
+        has_participant_photo:
+          type: boolean
+        default_caption:
+          type: string
+        hashtags:
+          type: array
+          items:
+            type: string
+        link:
+          type: string
+          format: uri
+
+    Template:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 789e0123-e89b-12d3-a456-426614174001
+        organiser_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: DevFest Lagos 2026
+        description:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/TemplateVisibility'
+        logo_url:
+          type: string
+          format: uri
+        style_variant:
+          type: string
+        text_placeholders:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextPlaceholder'
+        has_participant_photo:
+          type: boolean
+        default_caption:
+          type: string
+        hashtags:
+          type: array
+          items:
+            type: string
+        link:
+          type: string
+          format: uri
+        preview_image_url:
+          type: string
+          format: uri
+          description: Server-rendered preview thumbnail of the badge template
+        share_url:
+          type: string
+          format: uri
+          description: The participant-facing link to share
+          example: https://socialbadge.io/b/789e0123
+        published_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TemplateList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        total:
+          type: integer
+          example: 12
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 20
+
+    GenerateBadgeRequest:
+      type: object
+      required: [template_id, field_values]
+      properties:
+        template_id:
+          type: string
+          format: uuid
+          example: 789e0123-e89b-12d3-a456-426614174001
+        field_values:
+          type: object
+          description: >
+            Key-value map of participant inputs. Keys must match the `key` fields
+            defined in the template's `text_placeholders`.
+          additionalProperties:
+            type: string
+          example:
+            participant_name: "Amara Obi"
+        photo_url:
+          type: string
+          format: uri
+          description: URL of the participant's uploaded photo (required if template has_participant_photo=true)
+          example: https://cdn.socialbadge.io/photos/amara.jpg
+
+    Badge:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: abc12345-e89b-12d3-a456-426614174002
+        template_id:
+          type: string
+          format: uuid
+        image_url:
+          type: string
+          format: uri
+          description: URL of the generated badge image (PNG)
+          example: https://cdn.socialbadge.io/badges/abc12345.png
+        share_url:
+          type: string
+          format: uri
+          description: Shareable link to this personalised badge
+          example: https://socialbadge.io/badges/abc12345
+        created_at:
+          type: string
+          format: date-time
+
+    ShareRequest:
+      type: object
+      required: [platform]
+      properties:
+        platform:
+          type: string
+          enum: [twitter, linkedin, facebook, whatsapp, copy_link]
+          example: twitter
+        caption:
+          type: string
+          description: Optional edited caption to share alongside the badge
+          example: "I'm attending DevFest Lagos 2026! 🎉 #DevFestLagos"
+
+    ShareResponse:
+      type: object
+      properties:
+        share_url:
+          type: string
+          format: uri
+          description: Deep-link or pre-filled share URL for the selected platform
+          example: https://twitter.com/intent/tweet?text=...&url=...
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        db:
+          type: string
+          example: connected
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: Resource not found
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns API and database connectivity status.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: API and DB are healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Register a new organiser account
+      description: |
+        Creates a new organiser account with email and password.
+ 
+        - Password is hashed with a minimum of 10 salt rounds; plaintext is
+          never stored.
+        - Sets `email_verified = false` on the new account and sends a
+          one-time verification email with a 30-minute TTL token.
+        - Returns `409` if the email already exists — the error message must
+          not reveal that the address is registered (no email enumeration).
+        - All input is validated server-side regardless of client-side validation.
+        - Rate-limited to **10 requests per IP per minute**.
+        - All error responses use `{ "status": "error", "message": "..." }`.
+      operationId: signup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: >
+            Account created. Verification email sent. No token returned in body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Verification email sent.
+                  data:
+                    type: object
+                    example: {}
+        "400":
+          description: Validation error — missing field, invalid email format, or weak password
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Password must be at least 8 characters and include an uppercase letter, a number, and a special character."
+        "409":
+          description: >
+            Email already exists. Message deliberately vague to prevent
+            email enumeration.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Unable to create account. Please try a different email or log in."
+        "429":
+          description: Rate limit exceeded — 10 requests per IP per minute
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                example: 60
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+                example: 10
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+                example: 0
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Too many requests. Please try again later."
+        "500":
+          description: Unexpected internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "An unexpected error occurred. Please try again."
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      description: |
+        Validates credentials and issues a JWT access token and refresh token cookie.
+ 
+        - Returns a generic `401` for both wrong email and wrong password — never
+          specifies which field failed (prevents credential enumeration).
+        - Checks `email_verified = true` before granting access; returns `403` if
+          the account is unverified.
+        - On each failed attempt: increments `failed_login_count` on the user record.
+        - After **5 failed attempts within 15 minutes**: sets a time-based lock
+          (`locked_until`), sends an account-lock notification email, and returns
+          `429`. The lock expires automatically — no manual unlock required.
+        - On success:
+          - Issues a signed JWT access token (15-minute expiry) in the response body.
+          - Sets a refresh token (7-day expiry) as an `HttpOnly` cookie.
+          - Stores the refresh token hashed in the `refresh_tokens` table.
+          - Resets `failed_login_count` to `0`.
+        - All error responses use `{ "status": "error", "message": "..." }`.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            Set-Cookie:
+              description: >
+                HttpOnly refresh token cookie (7-day expiry).
+                e.g. `refresh_token=<hashed_token>; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Login successful.
+                  data:
+                    type: object
+                    properties:
+                      access_token:
+                        type: string
+                        description: Signed JWT — expires in 15 minutes
+                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                      token_type:
+                        type: string
+                        example: bearer
+        "401":
+          description: >
+            Invalid credentials — wrong email or wrong password. Deliberately
+            generic to prevent enumeration of registered addresses.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Invalid credentials."
+        "403":
+          description: Email address has not been verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Please verify your email before logging in."
+        "429":
+          description: >
+            Account temporarily locked after 5 failed attempts within 15 minutes.
+            Lock is time-based and expires automatically. A notification email is
+            sent to the account holder.
+          headers:
+            Retry-After:
+              description: Seconds until the lock expires
+              schema:
+                type: integer
+                example: 900
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Account temporarily locked due to multiple failed login attempts. Please try again later or reset your password."
+        "500":
+          description: Unexpected internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "An unexpected error occurred. Please try again."
+
+  /auth/google:
+    post:
+      tags: [Auth]
+      summary: Sign in or sign up with Google OAuth
+      description: |
+        Handles the server-side OAuth 2.0 authorisation code exchange with Google.
+ 
+        Flow:
+        1. Client receives an authorisation `code` from the Google consent screen.
+        2. Client sends `code` to this endpoint.
+        3. Server exchanges `code` for a Google access token via Google's token endpoint.
+        4. Server retrieves the user's profile: first name, last name, email, and
+           `profile_photo_url`.
+        5. **If email already exists** in `users`: links the Google provider to the
+           existing account and logs the user in.
+        6. **If email does not exist**: creates a new user with
+           `auth_provider = google`, `email_verified = true` (Google guarantees
+           verification), and no `password_hash`.
+        7. Issues a JWT access token and sets a refresh token `HttpOnly` cookie —
+           identical to the email login session flow.
+ 
+        - All error responses use `{ "status": "error", "message": "..." }`.
+      operationId: googleAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleAuthRequest"
+      responses:
+        "200":
+          description: Google OAuth successful — user logged in or account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Missing or malformed authorisation code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Authorisation code is required."
+        "401":
+          description: Google token exchange failed — code invalid, expired, or already used
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Google authorisation failed. Please try again."
+        "500":
+          description: Unexpected internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "An unexpected error occurred. Please try again."
+
+  
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset link
+      description: |
+        Accepts an email address and sends a password reset link containing a
+        one-time token to that address.
+        - Always returns `200 OK` regardless of whether the email exists, to prevent email enumeration attacks.
+        - If the email is found: generates a cryptographically random one-time token, stores a hashed copy with a 30-minute expiry, and sends a reset email with the raw token as a query parameter (e.g. `https://socialbadge.io/reset-password?token=<raw_token>`).
+        - If the email is not found: no email is sent, but the same `200` response is returned.
+        - Rate-limited to **10 requests per IP per minute**; exceeding this returns `429 Too Many Requests`.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: organiser@example.com
+      responses:
+        "200":
+          description: >
+            Request received. If the email is registered, a reset link has been
+            sent. No indication is given as to whether the email exists.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: If that email is registered, a reset link has been sent.
+        "400":
+          description: Invalid request body (e.g. malformed email format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        "429":
+          description: Rate limit exceeded — maximum 10 requests per IP per minute
+          headers:
+            Retry-After:
+              description: Number of seconds to wait before retrying
+              schema:
+                type: integer
+                example: 60
+            X-RateLimit-Limit:
+              description: Maximum requests allowed per minute
+              schema:
+                type: integer
+                example: 10
+            X-RateLimit-Remaining:
+              description: Remaining requests in the current window
+              schema:
+                type: integer
+                example: 0
+          content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ErrorResponse'
+               
+
+    /auth/reset-password:
+      post:
+        tags: [Auth]
+        summary: Reset password using a one-time token
+        description: 
+        - Validates the reset token and updates the user's password.
+        - Accepts a reset token, new password, and password confirmation.
+          Password match validation is enforced on both frontend and backend.
+        - Token must exist, not be expired (1-hour TTL), and not have been
+          previously used.
+        - New password must meet the same strength requirements as signup.
+        - On success:
+          - Hashes and saves the new password to `users.password_hash`
+          - Marks the reset token as `used = true`
+          - Revokes **all** refresh tokens for the user, forcing re-login on
+            all devices
+        - Returns `400` with `"Token is invalid or expired"` if validation fails.
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password, confirm_password]
+              properties:
+                token:
+                  type: string
+                  description: Raw one-time reset token received via email link
+                  example: a3f9c2e1b7d04a8e9f2c3b1d6e5a7f04
+                new_password:
+                  type: string
+                  minLength: 8
+                  description: New password (must meet signup strength requirements)
+                  example: NewS3cure!Pass
+                confirm_password:
+                  type: string
+                  description: Must match new_password exactly
+                  example: NewS3cure!Pass
+      responses:
+        "200":
+          description: Password reset successful — user should proceed to login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Password reset successful. Please log in with your new password.
+        "400":
+          description: |
+            One of the following:
+            - Token is invalid, expired, or already used
+            - Passwords do not match
+            - New password does not meet strength requirements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Token is invalid or expired
+ 
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify a new organiser's email address
+      description: |
+        Validates a one-time email verification token and activates the user account.
+ 
+        - Token is passed as a query parameter (e.g. from the link in the
+          verification email).
+        - Token must exist, be linked to a pending user account, and not be
+          expired (30-minute TTL).
+        - On success: sets `email_verified = true` and immediately invalidates
+          the token.
+        - All error responses use the format:
+          `{ "status": "error", "message": "<error message>" }`
+      operationId: verifyEmail
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: One-time verification token received via email
+          schema:
+            type: string
+            example: b2e7f1c4a09d3e6b8f2a1c5d9e4b7f03
+      responses:
+        "200":
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Email verified
+                  data:
+                    type: object
+                    properties:
+                      next:
+                        type: string
+                        example: onboarding
+        "400":
+          description: Account is already verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: User already verified
+        "401":
+          description: Token has expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Token has expired. Please request a new verification email."
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated organiser
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/instances:
+    get:
+      tags: [Template Instances]
+      summary: List all template instances for the authenticated organiser
+      description: |
+        Returns a summary of every template instance owned by the organiser
+        derived from the JWT. Returns an empty array (not 404) if the organiser
+        has no instances yet.
+      operationId: listTemplateInstances
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Array of the organiser's template instances (may be empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TemplateInstanceSummary'
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+ 
+    post:
+      tags: [Template Instances]
+      summary: Create a new template instance from a layout
+      description: |
+        Creates a new `template_instances` record linked to the selected layout
+        and the organiser's account (derived from JWT — not accepted in the
+        request body). The original layout record is never modified.
+ 
+        The new instance is created with default/empty configuration fields.
+        Partial updates to configuration are handled separately via
+        `PATCH /templates/instances/:id`.
+      operationId: createTemplateInstance
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [layout_id]
+              properties:
+                layout_id:
+                  type: string
+                  format: uuid
+                  description: ID of the layout to base this instance on
+                  example: d1e2f3a4-b5c6-7890-abcd-ef1234567890
+      responses:
+        "200":
+          description: Instance created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceMutationResponse'
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: layout_id does not exist in the layouts table
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Layout not found.
+ 
+  /templates/instances/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Template instance ID
+        schema:
+          type: string
+          format: uuid
+ 
+    get:
+      tags: [Template Instances]
+      summary: Get full configuration for a single template instance
+      description: |
+        Returns the complete saved configuration for the specified instance.
+        Used to pre-populate the editor form when an organiser reopens a template.
+        Returns 403 if the instance belongs to a different organiser.
+      operationId: getTemplateInstance
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Full instance configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateInstanceConfig'
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Instance does not belong to the authenticated organiser
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+ 
+    patch:
+      tags: [Template Instances]
+      summary: Save configuration for a template instance
+      description: |
+        Persists the organiser's configuration fields to the template instance.
+        Accepts `multipart/form-data` to support logo file upload alongside
+        JSON fields in the same request.
+ 
+        - `event_name` and `logo_url` are required; all other fields are optional.
+        - Partial updates are supported — only provided fields are written;
+          unprovided fields retain their existing values.
+        - Returns field-level 400 errors if `event_name` or `logo_url` is missing.
+        - Returns 403 if the instance belongs to a different organiser.
+ 
+        > **Note:** `logo_url` is set to the URL returned by
+        > `PUT /templates/instances/:id/logo` after a successful upload.
+        > Upload the file first, then call this endpoint with the returned URL.
+      operationId: updateTemplateInstance
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [event_name, logo_url]
+              properties:
+                event_name:
+                  type: string
+                  example: DevFest Lagos 2026
+                logo_url:
+                  type: string
+                  format: uri
+                  description: URL returned after a successful logo upload
+                  example: https://cdn.socialbadge.io/logos/devfest-uuid.png
+                accent_colour:
+                  type: string
+                  description: Hex colour code
+                  example: "#FF6B00"
+                name_field_label:
+                  type: string
+                  example: Your Full Name
+                hashtag:
+                  type: string
+                  example: "#DevFestLagos"
+                photo_field_enabled:
+                  type: boolean
+                  example: true
+                share_caption:
+                  type: string
+                  example: "I'm attending DevFest Lagos 2026!"
+                destination_link:
+                  type: string
+                  format: uri
+                  example: https://devfest.gdglagos.com
+      responses:
+        "200":
+          description: Configuration saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceMutationResponse'
+        "400":
+          description: Missing required fields (event_name or logo_url)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  errors:
+                    type: object
+                    description: Field-level validation errors
+                    example:
+                      event_name: "This field is required."
+                      logo_url: "This field is required."
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Instance does not belong to the authenticated organiser
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+ 
+  /templates/instances/{id}/logo:
+    put:
+      tags: [Template Instances]
+      summary: Upload a logo image for a template instance
+      description: |
+        Accepts a single image file, validates it, stores it, and returns the
+        stored URL. The returned `logo_url` should then be passed to
+        `PATCH /templates/instances/:id` to persist it against the instance.
+        - Accepted types: PNG and JPG only — returns `415` for any other format.
+        - Maximum file size: 2MB — returns `413` for oversized files.
+        - Filename is stored as a UUID to prevent collisions.
+        - If a logo already exists for this instance, the old file is deleted
+          from storage before the new one is saved.
+      operationId: uploadInstanceLogo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Template instance ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Logo image file (PNG or JPG, max 2MB)
+      responses:
+        "200":
+          description: Logo uploaded and stored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      logo_url:
+                        type: string
+                        format: uri
+                        example: https://cdn.socialbadge.io/logos/550e8400-e29b-41d4-a716-446655440000.png
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Instance does not belong to the authenticated organiser
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: File exceeds the 2MB size limit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "File too large. Maximum allowed size is 2MB."
+        "415":
+          description: Unsupported file type — only PNG and JPG are accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Unsupported file type. Please upload a PNG or JPG."
+ 
+  /templates/instances/{id}/publish:
+    post:
+      tags: [Template Instances]
+      summary: Publish a template instance and generate a shareable slug
+      description: |
+        Sets the instance status to `published` and generates a unique, stable
+        URL slug if one does not already exist.
+ 
+        - Required fields (`event_name`, `logo_url`) must be saved before
+          publishing; returns `400` if either is missing.
+        - Slug is generated using a URL-safe random string (e.g. nanoid, 10 chars).
+        - Slug uniqueness is enforced — generation is retried on collision.
+        - Slug is generated **once** on first publish and reused on all
+          subsequent publishes; re-publishing an already-published instance
+          returns `200` with the existing slug.
+      operationId: publishTemplateInstance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Instance published (or already published — idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishResponse'
+        "400":
+          description: Required fields not yet saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: "Complete all required fields before publishing."
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Instance does not belong to the authenticated organiser
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+ 
+  /templates/instances/{id}/unpublish:
+    post:
+      tags: [Template Instances]
+      summary: Unpublish a template instance
+      description: |
+        Sets the instance status to `draft`, making the participant page
+        inaccessible. The slug is **retained** in the database — re-publishing
+        restores the same URL.
+ 
+        - Calling unpublish on an already-unpublished (draft) instance returns
+          `200` with the same message — idempotent, no error.
+        - After unpublish, `GET /p/:slug` returns `404` for that slug.
+      operationId: unpublishTemplateInstance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Instance unpublished (or was already a draft — idempotent)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Template unpublished.
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Instance does not belong to the authenticated organiser
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /layouts:
+    get:
+      tags: [Layouts]
+      summary: List all available layouts
+      description: |
+        Returns all pre-seeded layout records for display on the layout picker screen.
+        Layouts are static/read-only — this endpoint never returns an empty array
+        in production (records are seeded before launch).
+        Requires a valid JWT.
+      operationId: listLayouts
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Array of all available layouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Layout'
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /badges:
+    post:
+      tags: [Badges]
+      summary: Generate a personalised badge
+      description: >
+        Participants submit their name, photo, and any other required fields
+        to generate a personalised badge from a published template.
+        No authentication required.
+      operationId: generateBadge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateBadgeRequest'
+      responses:
+        "201":
+          description: Badge generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Badge'
+        "400":
+          description: Missing or invalid input fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        "404":
+          description: Template not found or not published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /badges/{badge_id}:
+    get:
+      tags: [Badges]
+      summary: Get a generated badge by ID
+      operationId: getBadge
+      parameters:
+        - name: badge_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Badge details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Badge'
+        "404":
+          description: Badge not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /badges/{badge_id}/download:
+    get:
+      tags: [Badges]
+      summary: Download a badge as a PNG image
+      operationId: downloadBadge
+      parameters:
+        - name: badge_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: PNG image file
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Badge not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /badges/{badge_id}/share:
+    post:
+      tags: [Badges]
+      summary: Get a platform-specific share link for a badge
+      description: >
+        Returns a pre-filled share URL for the chosen social platform
+        (e.g. a Twitter intent URL). No authentication required.
+      operationId: shareBadge
+      parameters:
+        - name: badge_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareRequest'
+      responses:
+        "200":
+          description: Share URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareResponse'
+        "404":
+          description: Badge not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /uploads/image:
+    post:
+      tags: [Templates]
+      summary: Upload an image (logo or participant photo)
+      description: >
+        Accepts a multipart image upload and returns a CDN URL to reference
+        in template creation or badge generation requests.
+      operationId: uploadImage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG or PNG, max 5MB)
+      responses:
+        "200":
+          description: Image uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                    example: https://cdn.socialbadge.io/uploads/abc123.png
+        "400":
+          description: Invalid file type or size exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /p/{slug}:
+    get:
+      tags: [Public]
+      summary: Get public template data for the participant page
+      description: |
+        Returns the public-safe configuration needed to render the participant
+        badge page. No authentication required.
+ 
+        - Returns `404` if the slug does not exist **or** if the template status
+          is not `published` — draft existence is never revealed.
+        - Exposes only public display fields; the following are intentionally
+          omitted: `organiser_id`, organiser email, internal IDs,
+          `destination_link` (deferred to v0.4), and all organiser-private fields.
+        - Response is cacheable via `Cache-Control` headers.
+      operationId: getPublicTemplate
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: URL-safe slug generated on first publish
+          schema:
+            type: string
+            example: aB3xZ9qW1p
+      responses:
+        "200":
+          description: Public template data
+          headers:
+            Cache-Control:
+              description: "e.g. public, max-age=60"
+              schema:
+                type: string
+                example: "public, max-age=60"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicTemplateResponse"
+        "404":
+          description: Slug not found or template is not published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
