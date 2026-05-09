@@ -24,6 +24,7 @@ Backend API for the Social Badge platform — built with FastAPI, async SQLAlche
 | Migrations           | Alembic (async-aware)                             |
 | Config               | `pydantic-settings` (reads `.env`)                |
 | Package manager      | `uv`                                              |
+| UUID generation      | `uuid-utils` (fast UUID v7)                       |
 | Linting / Formatting | Ruff                                              |
 | Type checking        | mypy (strict)                                     |
 | Tests                | `pytest` + `pytest-asyncio` + `httpx.AsyncClient` |
@@ -114,11 +115,15 @@ cp .env.example .env
 Edit `.env` and set the required variables. The database driver **must** be `postgresql+asyncpg`:
 
 ```env
+ENVIRONMENT=local
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/social_badge
 REDIS_URL=redis://localhost:6379/0
 RESEND_API_KEY=re_your_api_key_here
 RESEND_FROM_EMAIL=noreply@yourdomain.com
 ```
+
+> [!IMPORTANT]
+> `RESEND_API_KEY` and `RESEND_FROM_EMAIL` have dummy defaults for local development. However, if `ENVIRONMENT` is set to `production`, the application will fail to start unless valid, non-dummy values are provided.
 
 ### 4. Create the database
 
@@ -187,6 +192,8 @@ uv run pytest
 ```
 
 `pytest-asyncio` is set to `auto` mode in `pyproject.toml`, so async tests don't need a decorator. Tests use `httpx.AsyncClient` with `ASGITransport` — no live server required.
+
+**Isolation**: The test suite automatically truncates all database tables and resets Redis state after every single test, ensuring no data leakage between test runs.
 
 ---
 
