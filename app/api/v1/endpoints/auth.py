@@ -1,12 +1,12 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status, Depends
 
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError
 from app.core.rate_limit import limiter
 from app.models.user import User
-from app.schemas.auth import SignupRequest, UserResponse
+from app.schemas.auth import SignupRequest, UserResponse, VerifyEmailRequest
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import signup
 
@@ -97,10 +97,10 @@ async def register(
 async def verify_email(
     session: DBSession,
     redis: RedisClient,
-    token: str = Query(..., description="The one-time verification token"),
+    payload: VerifyEmailRequest = Depends(),
 ) -> Any:
-    token_key = f"verification_token:{token}"
-    user_id = await redis.get(token_key)
+    token_key = f"verification_token:{payload.token}"
+    user_id = await redis.getdel(token_key)
 
     if not user_id:
         raise HTTPException(
@@ -125,6 +125,5 @@ async def verify_email(
     user.is_email_verified = True
     session.add(user)
     await session.commit()
-    await redis.delete(token_key)
 
     return SuccessResponse(message="Email verified", data={"next": "onboarding"})

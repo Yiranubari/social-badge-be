@@ -36,6 +36,9 @@ async def test_verify_email_success(
 
     assert response.status_code == 200
     assert response.json()["message"] == "Email verified"
+    await db_session.refresh(user)
+    assert user.is_email_verified is True
+    assert await fake_redis.get(token_key) is None
 
 
 @pytest.mark.asyncio
