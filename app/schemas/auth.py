@@ -28,7 +28,7 @@ class SignupRequest(BaseModel):
         json_schema_extra={
             "example": "StrongPassword1!",
             "minLength": 8,
-            "maxLength": 72,  # With bcrypt≥5.0.0, pswds above 72 bytes raise ValueError
+            "maxLength": 72,
         },
     )
 
@@ -49,6 +49,8 @@ class SignupRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, val: str) -> str:
+        if len(val.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 bytes long")
         if len(val) < 8:
             raise ValueError("Password must be at least 8 characters long")
         if not re.search(r"[A-Z]", val):

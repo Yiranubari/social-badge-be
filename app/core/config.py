@@ -29,10 +29,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> Self:
-        if self.ENVIRONMENT == "production":
-            if self.RESEND_API_KEY == "re_dummy_api_key":
+        environment = self.ENVIRONMENT.strip().lower()
+        api_key = self.RESEND_API_KEY.strip()
+        from_email = self.RESEND_FROM_EMAIL.strip()
+
+        if environment == "production":
+            if api_key in {"", "re_dummy_api_key", "re_your_api_key_here"}:
                 raise ValueError("RESEND_API_KEY must be set in production")
-            if self.RESEND_FROM_EMAIL == "noreply@yourdomain.com":
+            if from_email in {"", "noreply@yourdomain.com"}:
                 raise ValueError("RESEND_FROM_EMAIL must be set in production")
         return self
 
