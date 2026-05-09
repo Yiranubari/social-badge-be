@@ -6,15 +6,6 @@ from httpx import AsyncClient
 from app.core.exceptions import EmailDeliveryError
 
 
-@pytest.fixture
-def valid_signup_payload() -> dict[str, str]:
-    return {
-        "name": "API Test User",
-        "email": "apitest@example.com",
-        "password": "StrongPassword1!",  # noqa: S106
-    }
-
-
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
 async def test_signup_endpoint_success(
     mock_email: AsyncMock, client: AsyncClient, valid_signup_payload: dict[str, str]
