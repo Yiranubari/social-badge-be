@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Self
+from typing import Any, Self
 
-from pydantic import PostgresDsn, RedisDsn, model_validator
+from pydantic import PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
     FRONTEND_URL: str = "http://localhost:5173"
+    ALLOWED_ORIGINS: Any = []
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, val: Any) -> list[str] | str:
+        if isinstance(val, str) and not val.startswith("["):
+            return [i.strip() for i in val.split(",")]
+        elif isinstance(val, list | str):
+            return val
+        raise ValueError(val)
 
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
 

@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status, Depends
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError
@@ -137,7 +137,7 @@ async def forgot_password(
 
 @router.post(
     "/verify-email",
-    response_model=SuccessResponse[dict],
+    response_model=SuccessResponse[dict[str, Any]],
     status_code=status.HTTP_200_OK,
     summary="Verify email token",
     responses={
