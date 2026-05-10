@@ -3,6 +3,7 @@ from httpx import AsyncClient
 
 from app.api.deps import DBSession, RedisClient
 from app.models.user import User
+from app.core.token import hash_token
 
 
 @pytest.fixture
@@ -27,7 +28,8 @@ async def test_verify_email_success(
     await db_session.commit()
     await db_session.refresh(user)
 
-    token_key = f"verify:{verification_token}"
+    token_hash = hash_token(verification_token)
+    token_key = f"verify:{token_hash}"
     await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
@@ -76,7 +78,8 @@ async def test_verify_email_already_verified(
     await db_session.commit()
     await db_session.refresh(user)
 
-    token_key = f"verify:{verification_token}"
+    token_hash = hash_token(verification_token)
+    token_key = f"verify:{token_hash}"
     await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
