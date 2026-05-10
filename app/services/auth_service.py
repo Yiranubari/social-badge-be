@@ -471,10 +471,10 @@ async def _upsert_google_user(
             names = name.split(maxsplit=1) if name and name.strip() else []
             if names:
                 first_name = names[0]
-                last_name = names[1] if len(names) > 1 else ""
+                last_name = names[1] if len(names) > 1 else None
             else:
                 first_name = email.split("@")[0]
-                last_name = ""
+                last_name = None
 
             user = User(
                 first_name=first_name,

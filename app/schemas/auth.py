@@ -21,8 +21,8 @@ class SignupRequest(BaseModel):
         description="The first name of the organiser.",
         json_schema_extra={"example": "Jane", "minLength": 1},
     )
-    last_name: str = Field(
-        ...,
+    last_name: str | None = Field(
+        None,
         description="The last name of the organiser.",
         json_schema_extra={"example": "Doe", "minLength": 0},
     )
@@ -53,9 +53,9 @@ class SignupRequest(BaseModel):
 
     @field_validator("last_name")
     @classmethod
-    def validate_last_name(cls, val: str) -> str:
+    def validate_last_name(cls, val: str | None) -> str | None:
         if val is None:
-            return ""
+            return None
         return val.strip()
 
     @field_validator("email", mode="before")
@@ -175,8 +175,8 @@ class UserResponse(BaseModel):
         description="The first name of the organiser.",
         json_schema_extra={"example": "Jane"},
     )
-    last_name: str = Field(
-        ...,
+    last_name: str | None = Field(
+        None,
         description="The last name of the organiser.",
         json_schema_extra={"example": "Doe"},
     )
