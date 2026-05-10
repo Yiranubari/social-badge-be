@@ -115,7 +115,7 @@ def test_reset_password_request() -> None:
     assert req.confirm_password == "NewStrongPassword123!"  # noqa: S105
 
 
-def test_reset_pasword_request_rejects_password_mismatch() -> None:
+def test_reset_password_request_rejects_password_mismatch() -> None:
     data = {
         "token": "reset-token",
         "new_password": "NewStrongPassword123!",
