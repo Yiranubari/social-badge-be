@@ -120,6 +120,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/social_badge
 REDIS_URL=redis://localhost:6379/0
 RESEND_API_KEY=re_your_api_key_here
 RESEND_FROM_EMAIL=noreply@yourdomain.com
+ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5000"]
 ```
 
 > [!IMPORTANT]

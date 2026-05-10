@@ -31,7 +31,8 @@ async def test_verify_email_success(
     await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
-        f"/api/v1/auth/verify-email?token={verification_token}"
+        "/api/v1/auth/verify-email",
+        json={"token": verification_token},
     )
 
     assert response.status_code == 200
@@ -47,7 +48,8 @@ async def test_verify_email_expired_or_invalid_token(
     verification_token: str,
 ) -> None:
     response = await client.post(
-        f"/api/v1/auth/verify-email?token={verification_token}"
+        "/api/v1/auth/verify-email",
+        json={"token": verification_token},
     )
 
     assert response.status_code == 401
@@ -78,7 +80,8 @@ async def test_verify_email_already_verified(
     await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
-        f"/api/v1/auth/verify-email?token={verification_token}"
+        "/api/v1/auth/verify-email",
+        json={"token": verification_token},
     )
 
     assert response.status_code == 400

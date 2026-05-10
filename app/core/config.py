@@ -1,7 +1,8 @@
+import json
 from functools import lru_cache
-from typing import Self
+from typing import Any, Self
 
-from pydantic import PostgresDsn, RedisDsn, model_validator
+from pydantic import PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +25,25 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
     FRONTEND_URL: str = "http://localhost:5173"
+    ALLOWED_ORIGINS: list[str] | str = []
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, val: Any) -> list[str] | str:
+        if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
+            try:
+                decoded = json.loads(val)
+                if isinstance(decoded, list):
+                    return decoded
+            except json.JSONDecodeError:
+                pass
+        if isinstance(val, str) and "," in val:
+            return [i.strip() for i in val.split(",")]
+        elif isinstance(val, str):
+            return [val.strip()]
+        elif isinstance(val, list):
+            return val
+        raise ValueError(f"Invalid format for ALLOWED_ORIGINS: {val}")
 
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
 
