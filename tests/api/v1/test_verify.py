@@ -27,7 +27,7 @@ async def test_verify_email_success(
     await db_session.commit()
     await db_session.refresh(user)
 
-    token_key = f"verification_token:{verification_token}"
+    token_key = f"verify:{verification_token}"
     await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
@@ -76,7 +76,7 @@ async def test_verify_email_already_verified(
     await db_session.commit()
     await db_session.refresh(user)
 
-    token_key = f"verification_token:{verification_token}"
+    token_key = f"verify:{verification_token}"
     await fake_redis.set(token_key, str(user.id))
 
     response = await client.post(
