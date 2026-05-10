@@ -45,6 +45,11 @@ class Settings(BaseSettings):
             return val
         raise ValueError(f"Invalid format for ALLOWED_ORIGINS: {val}")
 
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    GOOGLE_OAUTH_STATE_TTL_MINUTES: int = 10
+
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
 
     @model_validator(mode="after")
@@ -52,12 +57,18 @@ class Settings(BaseSettings):
         environment = self.ENVIRONMENT.strip().lower()
         api_key = self.RESEND_API_KEY.strip()
         from_email = self.RESEND_FROM_EMAIL.strip()
+        google_client_id = self.GOOGLE_CLIENT_ID.strip()
+        google_client_secret = self.GOOGLE_CLIENT_SECRET.strip()
 
         if environment == "production":
             if api_key in {"", "re_dummy_api_key", "re_your_api_key_here"}:
                 raise ValueError("RESEND_API_KEY must be set in production")
             if from_email in {"", "noreply@yourdomain.com"}:
                 raise ValueError("RESEND_FROM_EMAIL must be set in production")
+            if google_client_id in {"", "your_google_client_id_here"}:
+                raise ValueError("GOOGLE_CLIENT_ID must be set in production")
+            if google_client_secret in {"", "your_google_client_secret_here"}:
+                raise ValueError("GOOGLE_CLIENT_SECRET must be set in production")
         return self
 
 
