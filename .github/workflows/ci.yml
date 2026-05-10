@@ -75,8 +75,20 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+      REDIS_URL: redis://localhost:6379/0
+      RESEND_API_KEY: re_dummy_api_key_for_ci
+      RESEND_FROM_EMAIL: test@example.com
     steps:
       - uses: actions/checkout@v6
 

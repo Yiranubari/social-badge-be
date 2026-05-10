@@ -1,0 +1,135 @@
+import re
+from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+class SignupRequest(BaseModel):
+    """Schema for the signup request payload."""
+
+    name: str = Field(
+        ...,
+        description="The full name of the organiser.",
+        json_schema_extra={"example": "Jane Doe", "minLength": 2},
+    )
+    email: EmailStr = Field(
+        ...,
+        description="A valid email address that will be used for login.",
+        json_schema_extra={"example": "jane@example.com"},
+    )
+    password: str = Field(
+        ...,
+        description=(
+            "Must contain at least one uppercase, one lowercase, "
+            "one number, and one special character."
+        ),
+        json_schema_extra={
+            "example": "StrongPassword1!",
+            "minLength": 8,
+            "maxLength": 72,
+        },
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, val: str) -> str:
+        if len(val.strip()) < 2:
+            raise ValueError("Name must be at least 2 characters long")
+        return val.strip()
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, val: str) -> str:
+        if isinstance(val, str):
+            return val.strip().lower()
+        return val
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, val: str) -> str:
+        if len(val.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 bytes long")
+        if len(val) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if not re.search(r"[A-Z]", val):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[a-z]", val):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r"\d", val):
+            raise ValueError("Password must contain at least one number")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", val):
+            raise ValueError("Password must contain at least one special character")
+        return val
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for the forgot password request payload."""
+
+    email: EmailStr = Field(
+        ...,
+        description="The email address associated with the user account.",
+        json_schema_extra={"example": "dave@example.com"},
+    )
+
+
+class UserResponse(BaseModel):
+    """Schema for the user details returned upon signup."""
+
+    model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
+
+    id: UUID = Field(
+        ...,
+        description="The unique identifier for the user.",
+        json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"},
+    )
+
+    name: str = Field(
+        ...,
+        description="The full name of the organiser.",
+        json_schema_extra={"example": "Jane Doe"},
+    )
+    email: EmailStr = Field(
+        ...,
+        description="The email address registered.",
+        json_schema_extra={"example": "jane@example.com"},
+    )
+
+    is_email_verified: bool = Field(
+        ...,
+        description="Whether the user's email has been verified.",
+        json_schema_extra={"example": False},
+    )
+    profile_photo_url: str | None = Field(
+        None,
+        description="Optional URL to the user's profile photo.",
+        json_schema_extra={"example": "https://example.com/photo.jpg"},
+    )
+    created_at: datetime = Field(
+        ...,
+        description="The timestamp when the user account was created.",
+        json_schema_extra={"example": "2026-05-09T05:28:33Z"},
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="The timestamp when the user account was last updated.",
+        json_schema_extra={"example": "2026-05-09T05:28:33Z"},
+    )
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def convert_uuid(cls, val: Any) -> Any:
+        if val is not None and not isinstance(val, UUID | str | bytes):
+            return str(val)
+        return val
+
+
+class VerifyEmailRequest(BaseModel):
+    """Schema for the email verification request payload."""
+
+    token: str = Field(
+        ...,
+        description="The one-time verification token",
+        json_schema_extra={"example": "abcdef123456"},
+    )
