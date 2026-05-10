@@ -125,6 +125,10 @@ async def register(
             "model": ErrorResponse,
             "description": "Validation error in the payload",
         },
+        429: {
+            "model": ErrorResponse,
+            "description": "Too many requests",
+        },
     },
 )
 @limiter.limit("5/minute")
