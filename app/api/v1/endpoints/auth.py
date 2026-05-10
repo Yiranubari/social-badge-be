@@ -182,7 +182,14 @@ async def verify_email(
 
     user.is_email_verified = True
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database update failed, please try again",
+        )
 
     return SuccessResponse(message="Email verified", data={"next": "onboarding"})
 
