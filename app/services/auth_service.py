@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
+from fastapi import Response
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -14,13 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import (
+    AccountLockedError,
     EmailConflictError,
     EmailDeliveryError,
+    EmailNotVerifiedError,
     GoogleOAuthError,
+    InvalidCredentialsError,
     InvalidPasswordResetTokenError,
 )
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.core.token import (
+    create_access_token,
+    create_refresh_token,
     generate_token,
     get_google_oauth_state,
     get_password_reset_user_id,
@@ -30,9 +36,16 @@ from app.core.token import (
     store_verification_token,
 )
 from app.models.auth_provider import AuthProvider
+from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, ResetPasswordRequest, SignupRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+)
 from app.services.email_service import (
+    send_account_lock_email,
     send_password_reset_email,
     send_verification_email,
 )
@@ -42,6 +55,12 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 GOOGLE_SCOPES = ("openid", "email", "profile")
+
+FAILED_LOGIN_PREFIX = "failed_login:"
+
+# Stable dummy hash used to equalize CPU cost between known/unknown users
+# and prevent timing-based account enumeration.
+_DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-timing-equalization")
 
 
 async def signup(
@@ -116,6 +135,97 @@ async def reset_password(
     user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
 
     await session.commit()
+
+
+async def signin(
+    session: AsyncSession,
+    redis: Redis,
+    payload: LoginRequest,
+) -> tuple[User, str, str]:
+    """Handle user login and rate limiting against invalid attempts."""
+
+    await check_lockout(redis, payload.email)
+
+    existing = await session.execute(select(User).where(User.email == payload.email))
+    existing_user = existing.scalars().first()
+    if not existing_user:
+        # Equalize timing with the wrong-password branch to avoid leaking
+        # whether the email is registered.
+        await asyncio.to_thread(verify_password, payload.password, _DUMMY_PASSWORD_HASH)
+        attempts = await increment_failed_attempts(redis, payload.email)
+
+        if attempts >= settings.MAX_LOGIN_ATTEMPTS:
+            raise AccountLockedError("Account locked due to too many failed attempts.")
+
+        raise InvalidCredentialsError
+
+    if not existing_user.password_hash or not await asyncio.to_thread(
+        verify_password, payload.password, existing_user.password_hash
+    ):
+        attempts = await increment_failed_attempts(redis, payload.email)
+
+        if attempts >= settings.MAX_LOGIN_ATTEMPTS:
+            try:
+                await send_account_lock_email(existing_user.email)
+            except EmailDeliveryError:
+                pass
+            raise AccountLockedError("Account locked due to too many failed attempts.")
+
+        raise InvalidCredentialsError
+
+    await reset_attempts(redis, payload.email)
+
+    if not existing_user.is_email_verified:
+        raise EmailNotVerifiedError
+
+    access_token = create_access_token(existing_user.id)
+    raw_refresh_token, expire = create_refresh_token(existing_user.id)
+
+    refresh_token = RefreshToken(
+        user_id=existing_user.id,
+        token_hash=hash_token(raw_refresh_token),
+        expires_at=expire,
+    )
+    session.add(refresh_token)
+
+    await session.commit()
+
+    return existing_user, access_token, raw_refresh_token
+
+
+def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key=settings.REFRESH_COOKIE,
+        value=refresh_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+    )
+
+
+async def check_lockout(redis: Redis, identifier: str) -> None:
+    key = f"{FAILED_LOGIN_PREFIX}{identifier}"
+    attempts = await redis.get(key)
+
+    if attempts and int(attempts) >= settings.MAX_LOGIN_ATTEMPTS:
+        ttl = await redis.ttl(key)
+        minutes = max(1, ttl // 60) if ttl and ttl > 0 else 1
+        raise AccountLockedError(f"Account locked. Try again in {minutes} minute(s).")
+
+
+async def increment_failed_attempts(redis: Redis, identifier: str) -> int:
+    key = f"{FAILED_LOGIN_PREFIX}{identifier}"
+    count = await redis.incr(key)
+
+    if count == 1:
+        # Set expiration only on the first failed attempt
+        await redis.expire(key, settings.LOCKOUT_WINDOW)
+    return int(count)
+
+
+async def reset_attempts(redis: Redis, identifier: str) -> None:
+    await redis.delete(f"{FAILED_LOGIN_PREFIX}{identifier}")
 
 
 async def request_password_reset(

@@ -6,10 +6,14 @@ from fakeredis import FakeAsyncRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import (
+    AccountLockedError,
     EmailConflictError,
     EmailDeliveryError,
+    EmailNotVerifiedError,
     GoogleOAuthError,
+    InvalidCredentialsError,
     InvalidPasswordResetTokenError,
 )
 from app.core.security import hash_password, verify_password
@@ -20,8 +24,14 @@ from app.core.token import (
     store_password_reset_token,
 )
 from app.models.auth_provider import AuthProvider
+from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, ResetPasswordRequest, SignupRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+)
 from app.services.auth_service import (
     _exchange_google_code,
     _extract_google_id_token_subject,
@@ -29,8 +39,12 @@ from app.services.auth_service import (
     _validate_google_subject_consistency,
     authenticate_with_google,
     build_google_auth_url,
+    check_lockout,
+    increment_failed_attempts,
     request_password_reset,
+    reset_attempts,
     reset_password,
+    signin,
     signup,
 )
 
@@ -245,6 +259,227 @@ async def test_reset_password_rejects_malformed_user_id(
             fake_redis,
             _make_reset_payload(raw_token),
         )
+
+
+# ---------------------------------------------------------------------------
+# signin helpers
+# ---------------------------------------------------------------------------
+
+
+async def _create_verified_user(
+    session: AsyncSession,
+    email: str = "signin@example.com",
+    password: str = "StrongPassword1!",  # noqa: S107
+) -> User:
+    user = User(
+        name="Signin User",
+        email=email,
+        password_hash=hash_password(password),
+        is_email_verified=True,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def _create_unverified_user(
+    session: AsyncSession,
+    email: str = "unverified@example.com",
+    password: str = "StrongPassword1!",  # noqa: S107
+) -> User:
+    user = User(
+        name="Unverified User",
+        email=email,
+        password_hash=hash_password(password),
+        is_email_verified=False,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+def _login(email: str, password: str = "StrongPassword1!") -> LoginRequest:  # noqa: S107
+    return LoginRequest(email=email, password=password)
+
+
+# ---------------------------------------------------------------------------
+# signin tests
+# ---------------------------------------------------------------------------
+
+
+async def test_signin_returns_user_and_tokens(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_verified_user(db_session, "ok@example.com")
+
+    user, access_token, refresh_token = await signin(
+        db_session, fake_redis, _login("ok@example.com")
+    )
+
+    assert user.email == "ok@example.com"
+    assert access_token
+    assert refresh_token
+
+
+async def test_signin_stores_hashed_refresh_token_in_db(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_verified_user(db_session, "store@example.com")
+
+    _, _, raw_refresh = await signin(
+        db_session, fake_redis, _login("store@example.com")
+    )
+
+    result = await db_session.execute(
+        select(RefreshToken)
+        .join(User, RefreshToken.user_id == User.id)
+        .where(User.email == "store@example.com")
+    )
+    tokens = result.scalars().all()
+    assert len(tokens) == 1
+    # Raw token must NOT be stored — only the hash
+    assert tokens[0].token_hash != raw_refresh
+
+
+async def test_signin_resets_failed_attempts_on_success(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_verified_user(db_session, "reset@example.com")
+    key = "failed_login:reset@example.com"
+    await fake_redis.set(key, "3")
+
+    await signin(db_session, fake_redis, _login("reset@example.com"))
+
+    assert await fake_redis.get(key) is None
+
+
+async def test_signin_wrong_email_raises_invalid_credentials(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    with pytest.raises(InvalidCredentialsError):
+        await signin(db_session, fake_redis, _login("ghost@example.com"))
+
+
+async def test_signin_wrong_password_raises_invalid_credentials(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_verified_user(db_session, "wrongpw@example.com")
+
+    with pytest.raises(InvalidCredentialsError):
+        await signin(
+            db_session,
+            fake_redis,
+            _login("wrongpw@example.com", password="WrongPassword1!"),  # noqa: S106
+        )
+
+
+async def test_signin_unverified_email_raises_email_not_verified(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_unverified_user(db_session, "noverify@example.com")
+
+    with pytest.raises(EmailNotVerifiedError):
+        await signin(db_session, fake_redis, _login("noverify@example.com"))
+
+
+@patch("app.services.auth_service.send_account_lock_email", new_callable=AsyncMock)
+async def test_signin_locks_after_max_failed_attempts(
+    mock_lock_email: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_verified_user(db_session, "lockme@example.com")
+    bad = _login("lockme@example.com", password="WrongPassword1!")  # noqa: S106
+
+    for _ in range(settings.MAX_LOGIN_ATTEMPTS - 1):
+        with pytest.raises(InvalidCredentialsError):
+            await signin(db_session, fake_redis, bad)
+
+    with pytest.raises(AccountLockedError):
+        await signin(db_session, fake_redis, bad)
+
+
+@patch("app.services.auth_service.send_account_lock_email", new_callable=AsyncMock)
+async def test_signin_sends_lock_email_on_lockout(
+    mock_lock_email: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await _create_verified_user(db_session, "lockmail@example.com")
+    bad = _login("lockmail@example.com", password="WrongPassword1!")  # noqa: S106
+
+    for _ in range(settings.MAX_LOGIN_ATTEMPTS):
+        with pytest.raises((InvalidCredentialsError, AccountLockedError)):
+            await signin(db_session, fake_redis, bad)
+
+    mock_lock_email.assert_called_once_with("lockmail@example.com")
+
+
+# ---------------------------------------------------------------------------
+# check_lockout / increment_failed_attempts / reset_attempts tests
+# ---------------------------------------------------------------------------
+
+
+async def test_check_lockout_passes_when_under_limit(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    key = "failed_login:under@example.com"
+    await fake_redis.set(key, str(settings.MAX_LOGIN_ATTEMPTS - 1))
+    # Should not raise
+    await check_lockout(fake_redis, "under@example.com")
+
+
+async def test_check_lockout_raises_when_at_max(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    key = "failed_login:locked@example.com"
+    await fake_redis.set(key, str(settings.MAX_LOGIN_ATTEMPTS))
+
+    with pytest.raises(AccountLockedError):
+        await check_lockout(fake_redis, "locked@example.com")
+
+
+async def test_check_lockout_passes_when_no_key(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    # Should not raise for a fresh email
+    await check_lockout(fake_redis, "fresh@example.com")
+
+
+async def test_increment_failed_attempts_returns_count(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    count = await increment_failed_attempts(fake_redis, "count@example.com")
+    assert count == 1
+    count = await increment_failed_attempts(fake_redis, "count@example.com")
+    assert count == 2
+
+
+async def test_increment_failed_attempts_sets_expiry_on_first(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await increment_failed_attempts(fake_redis, "expiry@example.com")
+    ttl = await fake_redis.ttl("failed_login:expiry@example.com")
+    assert ttl > 0
+
+
+async def test_reset_attempts_clears_redis_key(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    key = "failed_login:clear@example.com"
+    await fake_redis.set(key, "4")
+
+    await reset_attempts(fake_redis, "clear@example.com")
+
+    assert await fake_redis.get(key) is None
 
 
 @patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)

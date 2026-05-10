@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import resend
+import resend.exceptions
 
 from app.core.config import settings
 from app.core.exceptions import EmailDeliveryError
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 resend.api_key = settings.RESEND_API_KEY
 
 VERIFICATION_SUBJECT = "Verify your Social Badge account"
+ACCOUNT_LOCK_SUBJECT = "Your Social Badge account has been locked"
 PASSWORD_RESET_SUBJECT = "Reset your Social Badge password"  # noqa: S105
 
 
@@ -21,6 +23,18 @@ def _build_verification_html(token: str) -> str:
         f'<p><a href="{settings.FRONTEND_URL}/verify?token={token}">'
         "Verify Email</a></p>"
         "<p>This link expires in 30 minutes.</p>"
+    )
+
+
+def _build_account_lock_html() -> str:
+    minutes = settings.LOCKOUT_WINDOW // 60
+    return (
+        "<h2>Your Social Badge account has been temporarily locked</h2>"
+        "<p>We detected too many failed login attempts on your account.</p>"
+        f"<p>Your account has been locked for {minutes} minutes. "
+        "Please try again after that time.</p>"
+        "<p>If this wasn't you, we recommend changing your password "
+        "once you regain access.</p>"
     )
 
 
@@ -54,6 +68,25 @@ async def send_verification_email(to: str, token: str) -> None:
     except resend.exceptions.ResendError as exc:
         logger.exception("Failed to send verification email to %s", to)
         raise EmailDeliveryError(f"Failed to send verification email to {to}") from exc
+
+
+async def send_account_lock_email(to: str) -> None:
+    """Dispatch an account-lock notification email via Resend.
+
+    Raises EmailDeliveryError if the Resend API call fails.
+    """
+    params: resend.Emails.SendParams = {
+        "from": settings.RESEND_FROM_EMAIL,
+        "to": [to],
+        "subject": ACCOUNT_LOCK_SUBJECT,
+        "html": _build_account_lock_html(),
+    }
+
+    try:
+        await asyncio.to_thread(resend.Emails.send, params)
+    except resend.exceptions.ResendError as exc:
+        logger.exception("Failed to send account lock email to %s", to)
+        raise EmailDeliveryError(f"Failed to send account lock email to {to}") from exc
 
 
 async def send_password_reset_email(to: str, token: str) -> None:

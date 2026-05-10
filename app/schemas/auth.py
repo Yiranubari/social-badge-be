@@ -111,6 +111,24 @@ class ResetPasswordRequest(BaseModel):
         return self
 
 
+class LoginRequest(BaseModel):
+    """Schema for the login request payload."""
+
+    email: EmailStr = Field(
+        ...,
+        description="A valid email address that will be used for login.",
+        json_schema_extra={"exmaple": "jane@example.com"},
+    )
+    password: str = Field(
+        ...,
+        description=(
+            "Must contain at least one uppercase, one lowercase, "
+            "one number, and one special character."
+        ),
+        json_schema_extra={"example": "StrongPassword1!", "minLength": 8},
+    )
+
+
 class ForgotPasswordRequest(BaseModel):
     """Schema for the forgot password request payload."""
 
@@ -170,6 +188,20 @@ class UserResponse(BaseModel):
         if val is not None and not isinstance(val, UUID | str | bytes):
             return str(val)
         return val
+
+
+class LoginResponse(BaseModel):
+    """Schema for a successful login response."""
+
+    access_token: str = Field(
+        ...,
+        description="Valid JWT access token issued on login.",
+        json_schema_extra={"example": "eyJhbGciOiJIIsInR5cCI6IkpXVCJ9.ey..."},
+    )
+    user: UserResponse = Field(
+        ...,
+        description="The authenticated user's profile details.",
+    )
 
 
 class VerifyEmailRequest(BaseModel):

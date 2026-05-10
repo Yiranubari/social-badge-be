@@ -1,6 +1,9 @@
 import hashlib
 import secrets
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
+from jose import jwt
 from redis.asyncio import Redis
 
 from app.core.config import settings
@@ -51,6 +54,35 @@ async def get_verified_user_id(
         await redis.delete(key)
         return str(user_id)
     return None
+
+
+def create_access_token(user_id: UUID) -> str:
+    """Generate and return a JWT access token."""
+
+    expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": str(user_id),
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "jti": secrets.token_hex(16),
+    }
+    return str(jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM))
+
+
+def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
+    """Generate and return a JWT refresh token."""
+
+    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    payload = {
+        "sub": str(user_id),
+        "exp": expire,
+        "iat": datetime.now(UTC),
+        "type": "refresh",
+        "jti": secrets.token_hex(16),
+    }
+    return jwt.encode(
+        payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    ), expire
 
 
 async def store_password_reset_token(

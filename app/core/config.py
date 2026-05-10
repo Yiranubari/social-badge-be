@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +21,23 @@ class Settings(BaseSettings):
     DATABASE_URL: PostgresDsn
     REDIS_URL: RedisDsn = "redis://localhost:6379/0"  # type: ignore[assignment]
     VERIFICATION_TOKEN_TTL_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    SECRET_KEY: str  # required; no default — fail at startup if unset
+    ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
+
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    REFRESH_COOKIE: str = "refresh_token"
+
+    @model_validator(mode="after")
+    def validate_cookie_policy(self) -> "Settings":
+        if self.COOKIE_SAMESITE == "none" and not self.COOKIE_SECURE:
+            raise ValueError("COOKIE_SECURE must be True when COOKIE_SAMESITE='none'")
+        return self
+
+    MAX_LOGIN_ATTEMPTS: int = 5
+    LOCKOUT_WINDOW: int = 900  # 15 minutes in seconds
 
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
