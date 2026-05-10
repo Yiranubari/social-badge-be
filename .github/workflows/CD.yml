@@ -1,12 +1,16 @@
 name: CD
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches: [main, staging]
+    types:
+      - completed
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Deploy to server
@@ -16,8 +20,10 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:$PATH"
+            source $HOME/.local/bin/env 2>/dev/null || true
             cd ~/social-badge-be
-            git pull origin ${{ github.ref_name }}
+            git pull origin ${{ github.event.workflow_run.head_branch }}
             uv sync
             uv run alembic upgrade head
             pm2 restart social-badge-be

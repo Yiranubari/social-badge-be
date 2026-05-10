@@ -6,8 +6,8 @@ from redis.asyncio import Redis
 from app.core.config import settings
 
 TOKEN_PREFIX = "verify:"  # noqa: S105
-RESET_TOKEN_PREFIX = "reset:"  # noqa: S105
-RESET_TOKEN_TTL_SECONDS = 60 * 60
+PASSWORD_RESET_PREFIX = "pwd_reset:"  # noqa: S105
+GOOGLE_STATE_PREFIX = "oauth:google:state:"
 
 
 def generate_token() -> tuple[str, str]:
@@ -58,21 +58,37 @@ async def store_password_reset_token(
     token_hash: str,
     user_id: str,
 ) -> None:
-    """Store a password reset token hash as one-time Redis token."""
-    await redis.set(
-        f"{RESET_TOKEN_PREFIX}{token_hash}",
-        user_id,
-        ex=RESET_TOKEN_TTL_SECONDS,
-    )
+    """Store a password reset token in Redis with a TTL."""
+    ttl_seconds = settings.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60
+    await redis.set(f"{PASSWORD_RESET_PREFIX}{token_hash}", user_id, ex=ttl_seconds)
 
 
 async def get_password_reset_user_id(
     redis: Redis,
     token_hash: str,
 ) -> str | None:
-    """Look up and consume a password reset token."""
-    key = f"{RESET_TOKEN_PREFIX}{token_hash}"
+    """Look up and consume a password reset token.
+
+    Returns the associated user_id if the token is still valid,
+    otherwise None.  Deletes the token on successful lookup
+    because password reset tokens are single-use.
+    """
+    key = f"{PASSWORD_RESET_PREFIX}{token_hash}"
     user_id = await redis.getdel(key)
     if user_id is not None:
         return str(user_id)
     return None
+
+
+async def store_google_oauth_state(redis: Redis, state: str) -> None:
+    ttl_seconds = settings.GOOGLE_OAUTH_STATE_TTL_MINUTES * 60
+    await redis.set(f"{GOOGLE_STATE_PREFIX}{state}", "1", ex=ttl_seconds)
+
+
+async def get_google_oauth_state(redis: Redis, state: str) -> bool:
+    key = f"{GOOGLE_STATE_PREFIX}{state}"
+    stored = await redis.getdel(key)
+    if stored is None:
+        return False
+
+    return True
