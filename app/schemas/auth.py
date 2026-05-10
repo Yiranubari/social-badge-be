@@ -25,7 +25,11 @@ class SignupRequest(BaseModel):
             "Must contain at least one uppercase, one lowercase, "
             "one number, and one special character."
         ),
-        json_schema_extra={"example": "StrongPassword1!", "minLength": 8},
+        json_schema_extra={
+            "example": "StrongPassword1!",
+            "minLength": 8,
+            "maxLength": 72,
+        },
     )
 
     @field_validator("name")
@@ -35,9 +39,18 @@ class SignupRequest(BaseModel):
             raise ValueError("Name must be at least 2 characters long")
         return val.strip()
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, val: str) -> str:
+        if isinstance(val, str):
+            return val.strip().lower()
+        return val
+
     @field_validator("password")
     @classmethod
     def validate_password(cls, val: str) -> str:
+        if len(val.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 bytes long")
         if len(val) < 8:
             raise ValueError("Password must be at least 8 characters long")
         if not re.search(r"[A-Z]", val):
@@ -69,6 +82,16 @@ class LoginRequest(BaseModel):
     )
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Schema for the forgot password request payload."""
+
+    email: EmailStr = Field(
+        ...,
+        description="The email address associated with the user account.",
+        json_schema_extra={"example": "dave@example.com"},
+    )
+
+
 class UserResponse(BaseModel):
     """Schema for the user details returned upon signup."""
 
@@ -90,6 +113,7 @@ class UserResponse(BaseModel):
         description="The email address registered.",
         json_schema_extra={"example": "jane@example.com"},
     )
+
     is_email_verified: bool = Field(
         ...,
         description="Whether the user's email has been verified.",
@@ -113,8 +137,8 @@ class UserResponse(BaseModel):
 
     @field_validator("id", mode="before")
     @classmethod
-    def validate_id(cls, val: Any) -> Any:
-        if val is not None and not isinstance(val, str | bytes | UUID):
+    def convert_uuid(cls, val: Any) -> Any:
+        if val is not None and not isinstance(val, UUID | str | bytes):
             return str(val)
         return val
 

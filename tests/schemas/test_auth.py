@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.auth import LoginRequest, SignupRequest, UserResponse
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    SignupRequest,
+    UserResponse,
+)
 
 
 def test_signup_request_valid() -> None:
@@ -137,3 +142,15 @@ def test_user_response_with_profile_photo() -> None:
     }
     resp = UserResponse(**data)
     assert resp.profile_photo_url == "https://example.com/photo.jpg"
+
+
+def test_forgot_password_request_valid() -> None:
+    data = {"email": "jane.doe@example.com"}
+    req = ForgotPasswordRequest(**data)
+    assert req.email == "jane.doe@example.com"
+
+
+def test_forgot_password_request_invalid_email() -> None:
+    data = {"email": "not-an-email"}
+    with pytest.raises(ValidationError):
+        ForgotPasswordRequest(**data)

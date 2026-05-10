@@ -9,6 +9,7 @@ from redis.asyncio import Redis
 from app.core.config import settings
 
 TOKEN_PREFIX = "verify:"  # noqa: S105
+PASSWORD_RESET_PREFIX = "pwd_reset:"  # noqa: S105
 
 
 def generate_token() -> tuple[str, str]:
@@ -81,3 +82,31 @@ def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
     return jwt.encode(
         payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     ), expire
+
+
+async def store_password_reset_token(
+    redis: Redis,
+    token_hash: str,
+    user_id: str,
+) -> None:
+    """Store a password reset token in Redis with a TTL."""
+    ttl_seconds = settings.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60
+    await redis.set(f"{PASSWORD_RESET_PREFIX}{token_hash}", user_id, ex=ttl_seconds)
+
+
+async def get_password_reset_user_id(
+    redis: Redis,
+    token_hash: str,
+) -> str | None:
+    """Look up and consume a password reset token.
+
+    Returns the associated user_id if the token is still valid,
+    otherwise None.  Deletes the token on successful lookup
+    because password reset tokens are single-use.
+    """
+    key = f"{PASSWORD_RESET_PREFIX}{token_hash}"
+    user_id = await redis.get(key)
+    if user_id is not None:
+        await redis.delete(key)
+        return str(user_id)
+    return None

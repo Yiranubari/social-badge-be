@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.exceptions import (
     AccountLockedError,
     EmailConflictError,
+    EmailDeliveryError,
     EmailNotVerifiedError,
     InvalidCredentialsError,
 )
@@ -16,10 +17,11 @@ from app.core.security import hash_password, verify_password
 from app.models.auth_provider import AuthProvider
 from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
-from app.schemas.auth import LoginRequest, SignupRequest
+from app.schemas.auth import ForgotPasswordRequest, LoginRequest, SignupRequest
 from app.services.auth_service import (
     check_lockout,
     increment_failed_attempts,
+    request_password_reset,
     reset_attempts,
     signin,
     signup,
@@ -32,6 +34,10 @@ def _make_payload(email: str = "jane@example.com") -> SignupRequest:
         email=email,
         password="StrongPassword1!",  # noqa: S106
     )
+
+
+def _make_forgot_payload(email: str = "jane@example.com") -> ForgotPasswordRequest:
+    return ForgotPasswordRequest(email=email)
 
 
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
@@ -353,3 +359,74 @@ async def test_reset_attempts_clears_redis_key(
     await reset_attempts(fake_redis, "clear@example.com")
 
     assert await fake_redis.get(key) is None
+
+
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_request_password_reset_stores_token_for_existing_user(
+    mock_email: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    signup_payload = _make_payload("reset@example.com")
+    with patch(
+        "app.services.auth_service.send_verification_email", new_callable=AsyncMock
+    ):
+        await signup(db_session, fake_redis, signup_payload)
+
+    forgot_payload = _make_forgot_payload("reset@example.com")
+    await request_password_reset(db_session, fake_redis, forgot_payload)
+
+    keys = await fake_redis.keys("pwd_reset:*")
+    assert len(keys) == 1
+
+
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_request_password_reset_sends_email_to_existing_user(
+    mock_email: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    signup_payload = _make_payload("sendmail@example.com")
+    with patch(
+        "app.services.auth_service.send_verification_email", new_callable=AsyncMock
+    ):
+        await signup(db_session, fake_redis, signup_payload)
+
+    forgot_payload = _make_forgot_payload("sendmail@example.com")
+    await request_password_reset(db_session, fake_redis, forgot_payload)
+
+    mock_email.assert_called_once()
+    assert mock_email.call_args[0][0] == "sendmail@example.com"
+
+
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_request_password_reset_silent_for_unknown_email(
+    mock_email: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    forgot_payload = _make_forgot_payload("unknown@example.com")
+    await request_password_reset(db_session, fake_redis, forgot_payload)
+
+    keys = await fake_redis.keys("pwd_reset:*")
+    assert len(keys) == 0
+    mock_email.assert_not_called()
+
+
+@patch("app.services.auth_service.send_password_reset_email", new_callable=AsyncMock)
+async def test_request_password_reset_swallows_email_failure(
+    mock_email: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    mock_email.side_effect = EmailDeliveryError("Failed to send")
+
+    signup_payload = _make_payload("failreset@example.com")
+    with patch(
+        "app.services.auth_service.send_verification_email", new_callable=AsyncMock
+    ):
+        await signup(db_session, fake_redis, signup_payload)
+
+    forgot_payload = _make_forgot_payload("failreset@example.com")
+    # Should NOT raise — the service swallows EmailDeliveryError silently
+    await request_password_reset(db_session, fake_redis, forgot_payload)
