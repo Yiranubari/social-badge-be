@@ -69,7 +69,12 @@ router = APIRouter()
                 }
             },
         },
-        409: {"model": ErrorResponse, "description": "Email is already registered"},
+        409: {
+            "model": ErrorResponse,
+            "description": (
+                "Unable to create account. Please use a different email or login."
+            ),
+        },
         422: {"model": ErrorResponse, "description": "Validation error in the payload"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
     },
@@ -96,7 +101,7 @@ async def register(
     except EmailConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email is already registered",
+            detail="Unable to create account. Please use a different email or login.",
         ) from exc
 
     return SuccessResponse(

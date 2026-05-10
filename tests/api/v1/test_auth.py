@@ -19,7 +19,8 @@ from app.models.user import User
 @pytest.fixture
 def valid_signup_payload() -> dict[str, str]:
     return {
-        "name": "API Test User",
+        "first_name": "API Test",
+        "last_name": "User",
         "email": "apitest@example.com",
         "password": "StrongPassword1!",  # noqa: S106
     }
@@ -35,7 +36,8 @@ async def test_signup_endpoint_success(
     assert data["message"] == (
         "Registration successful. Please check your email to verify your account."
     )
-    assert data["data"]["name"] == "API Test User"
+    assert data["data"]["first_name"] == "API Test"
+    assert data["data"]["last_name"] == "User"
     assert data["data"]["email"] == "apitest@example.com"
     mock_email.assert_called_once()
 
@@ -50,7 +52,10 @@ async def test_signup_endpoint_conflict(
     assert response.status_code == 409
     data = response.json()
     assert data["status"] == "error"
-    assert data["message"] == "Email is already registered"
+    assert (
+        data["message"]
+        == "Unable to create account. Please use a different email or login."
+    )
 
 
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
@@ -60,7 +65,8 @@ async def test_signup_endpoint_email_delivery_failure(
     mock_email.side_effect = EmailDeliveryError("Failed to send")
 
     payload = {
-        "name": "Fail User",
+        "first_name": "Fail",
+        "last_name": "User",
         "email": "fail@example.com",
         "password": "StrongPassword1!",  # noqa: S106
     }
@@ -74,7 +80,8 @@ async def test_signup_endpoint_email_delivery_failure(
 @pytest.mark.asyncio
 async def test_signup_endpoint_validation_error(client: AsyncClient) -> None:
     payload = {
-        "name": "Short",
+        "first_name": "S",
+        "last_name": "H",
         "email": "not-an-email",
         "password": "weak",  # noqa: S106
     }
@@ -115,7 +122,8 @@ async def verified_login_user(
         "password": "StrongPassword1!",  # noqa: S106
     }
     user = User(
-        name="Login User",
+        first_name="Login",
+        last_name="User",
         email=creds["email"],
         password_hash=hash_password(creds["password"]),
         is_email_verified=True,
@@ -138,7 +146,8 @@ async def unverified_login_user(
         "password": "StrongPassword1!",  # noqa: S106
     }
     user = User(
-        name="Unverified User",
+        first_name="Unverified",
+        last_name="User",
         email=creds["email"],
         password_hash=hash_password(creds["password"]),
         is_email_verified=False,
@@ -344,7 +353,8 @@ async def test_google_callback_success(
 ) -> None:
     user = User(
         id=uuid.uuid4(),
-        name="Google User",
+        first_name="Google",
+        last_name="User",
         email="google@example.com",
         is_email_verified=True,
         profile_photo_url="https://example.com/photo.jpg",

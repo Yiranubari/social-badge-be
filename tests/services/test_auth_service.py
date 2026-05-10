@@ -39,7 +39,8 @@ from app.services.auth_service import (
 
 def _make_payload(email: str = "jane@example.com") -> SignupRequest:
     return SignupRequest(
-        name="Jane Doe",
+        first_name="Jane",
+        last_name="Doe",
         email=email,
         password="StrongPassword1!",  # noqa: S106
     )
@@ -63,7 +64,8 @@ async def test_signup_creates_user(
     )
     user = result.scalars().first()
     assert user is not None
-    assert user.name == "Jane Doe"
+    assert user.first_name == "Jane"
+    assert user.last_name == "Doe"
 
 
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
@@ -158,7 +160,8 @@ async def _create_verified_user(
     password: str = "StrongPassword1!",  # noqa: S107
 ) -> User:
     user = User(
-        name="Signin User",
+        first_name="Signin",
+        last_name="User",
         email=email,
         password_hash=hash_password(password),
         is_email_verified=True,
@@ -175,7 +178,8 @@ async def _create_unverified_user(
     password: str = "StrongPassword1!",  # noqa: S107
 ) -> User:
     user = User(
-        name="Unverified User",
+        first_name="Unverified",
+        last_name="User",
         email=email,
         password_hash=hash_password(password),
         is_email_verified=False,
@@ -474,6 +478,8 @@ async def test_authenticate_with_google_creates_new_user(
 
     assert is_new_user is True
     assert user.email == "google@example.com"
+    assert user.first_name == "Google"
+    assert user.last_name == "User"
     assert user.is_email_verified is True
     assert user.profile_photo_url == "https://example.com/photo.jpg"
 
@@ -495,7 +501,8 @@ async def test_authenticate_with_google_links_existing_user(
     fake_redis: FakeAsyncRedis,
 ) -> None:
     existing_user = User(
-        name="Existing User",
+        first_name="Existing",
+        last_name="User",
         email="existing@example.com",
         is_email_verified=True,
     )
@@ -546,7 +553,8 @@ async def test_authenticate_with_google_rejects_unverified_password_account(
     fake_redis: FakeAsyncRedis,
 ) -> None:
     existing_user = User(
-        name="Hijacked User",
+        first_name="Hijacked",
+        last_name="User",
         email="victim@example.com",
         password_hash="hashed-password",  # noqa: S106
         is_email_verified=False,
@@ -595,7 +603,8 @@ async def test_authenticate_with_google_prefers_existing_google_subject_link(
     fake_redis: FakeAsyncRedis,
 ) -> None:
     existing_user = User(
-        name="Linked User",
+        first_name="Linked",
+        last_name="User",
         email="linked@example.com",
         is_email_verified=True,
     )

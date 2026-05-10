@@ -107,7 +107,8 @@ async def client(
 @pytest.fixture
 def valid_signup_payload() -> dict[str, str]:
     return {
-        "name": "API Test User",
+        "first_name": "API Test",
+        "last_name": "User",
         "email": "apitest@example.com",
         "password": "StrongPassword1!",  # noqa: S106
     }

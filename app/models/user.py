@@ -22,7 +22,8 @@ class User(Base):
         primary_key=True,
         default=uuid7,
     )
-    name: Mapped[str] = mapped_column(String(200))
+    first_name: Mapped[str] = mapped_column(String(200))
+    last_name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False)

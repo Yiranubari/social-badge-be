@@ -68,7 +68,8 @@ async def signup(
     password_hash = await asyncio.to_thread(hash_password, payload.password)
 
     user = User(
-        name=payload.name,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
         email=payload.email,
         password_hash=password_hash,
     )
@@ -427,8 +428,17 @@ async def _upsert_google_user(
         is_new_user = user is None
 
         if user is None:
+            names = name.split(maxsplit=1) if name and name.strip() else []
+            if names:
+                first_name = names[0]
+                last_name = names[1] if len(names) > 1 else ""
+            else:
+                first_name = email.split("@")[0]
+                last_name = ""
+
             user = User(
-                name=name,
+                first_name=first_name,
+                last_name=last_name,
                 email=email,
                 password_hash=None,
                 is_email_verified=True,
