@@ -1,7 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Literal, Self
-from typing import Any
+from typing import Any, Literal, Self
 
 from pydantic import PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict

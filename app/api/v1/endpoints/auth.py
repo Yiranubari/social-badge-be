@@ -1,38 +1,23 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import (
     AccountLockedError,
     EmailConflictError,
     EmailNotVerifiedError,
+    GoogleOAuthError,
     InvalidCredentialsError,
 )
-from app.core.rate_limit import limiter
-from app.schemas.auth import (
-    ForgotPasswordRequest,
-    LoginRequest,
-    LoginResponse,
-    SignupRequest,
-    UserResponse,
-)
-from app.schemas.response import ErrorResponse, SuccessResponse
-from app.services.auth_service import (
-    request_password_reset,
-    set_refresh_cookie,
-    signin
-)
-from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse
-
-from app.api.deps import DBSession, RedisClient
-from app.core.exceptions import EmailConflictError, GoogleOAuthError
 from app.core.rate_limit import limiter
 from app.core.token import hash_token
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
+    LoginRequest,
+    LoginResponse,
     SignupRequest,
     UserResponse,
     VerifyEmailRequest,
@@ -42,7 +27,9 @@ from app.services.auth_service import (
     authenticate_with_google,
     build_google_auth_url,
     request_password_reset,
-    signup
+    set_refresh_cookie,
+    signin,
+    signup,
 )
 
 router = APIRouter()

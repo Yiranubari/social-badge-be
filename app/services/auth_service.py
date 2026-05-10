@@ -5,8 +5,8 @@ import json
 import logging
 from urllib.parse import urlencode
 
-from fastapi import Response
 import httpx
+from fastapi import Response
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +18,7 @@ from app.core.exceptions import (
     EmailConflictError,
     EmailDeliveryError,
     EmailNotVerifiedError,
+    GoogleOAuthError,
     InvalidCredentialsError,
 )
 from app.core.security import hash_password, verify_password
@@ -25,8 +26,8 @@ from app.core.token import (
     create_access_token,
     create_refresh_token,
     generate_token,
-    hash_token,
     get_google_oauth_state,
+    hash_token,
     store_google_oauth_state,
     store_password_reset_token,
     store_verification_token,
@@ -114,9 +115,7 @@ async def signin(
     if not existing_user:
         # Equalize timing with the wrong-password branch to avoid leaking
         # whether the email is registered.
-        await asyncio.to_thread(
-            verify_password, payload.password, _DUMMY_PASSWORD_HASH
-        )
+        await asyncio.to_thread(verify_password, payload.password, _DUMMY_PASSWORD_HASH)
         attempts = await increment_failed_attempts(redis, payload.email)
 
         if attempts >= settings.MAX_LOGIN_ATTEMPTS:
@@ -124,7 +123,7 @@ async def signin(
 
         raise InvalidCredentialsError
 
-    if not await asyncio.to_thread(
+    if not existing_user.password_hash or not await asyncio.to_thread(
         verify_password, payload.password, existing_user.password_hash
     ):
         attempts = await increment_failed_attempts(redis, payload.email)

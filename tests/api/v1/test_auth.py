@@ -1,6 +1,5 @@
-from collections.abc import AsyncIterator
-from unittest.mock import AsyncMock, patch
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -12,11 +11,9 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-
+from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
 from app.core.security import hash_password
 from app.models.user import User
-from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
-
 
 
 @pytest.fixture

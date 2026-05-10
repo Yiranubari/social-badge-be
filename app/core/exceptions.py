@@ -22,6 +22,8 @@ class EmailNotVerifiedError(Exception):
     """Exception raised when a user attempts to login without verifying their email."""
 
     pass
+
+
 class GoogleOAuthError(Exception):
     def __init__(self, message: str, status_code: int = 400) -> None:
         super().__init__(message)
