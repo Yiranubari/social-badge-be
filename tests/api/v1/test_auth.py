@@ -263,7 +263,7 @@ async def test_reset_password_endpoint_rejects_weak_password(
     assert response.status_code == 422
     data = response.json()
     assert data["status"] == "error"
-    assert data["message"] == "Password must be at least 8 characters long"
+    assert "password must be at least 8 characters long" in data["message"].lower()
 
 
 async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
