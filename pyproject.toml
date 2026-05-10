@@ -18,6 +18,7 @@ dependencies = [
     "rich>=15.0.0",
     "asgi-correlation-id>=4.3.4",
     "slowapi>=0.1.9",
+    "python-jose[cryptography]>=3.5.0",
     "httpx>=0.28.0",
 ]
 
@@ -29,6 +30,7 @@ dev = [
     "mypy>=1.15.0",
     "pre-commit>=4.2.0",
     "fakeredis[lua]>=2.35.1",
+    "types-python-jose>=3.5.0.20260408",
 ]
 
 [tool.pytest.ini_options]

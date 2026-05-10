@@ -4,7 +4,7 @@ import pytest
 import resend
 
 from app.core.exceptions import EmailDeliveryError
-from app.services.email_service import send_verification_email
+from app.services.email_service import send_account_lock_email, send_verification_email
 
 
 @patch("app.services.email_service.resend.Emails.send")
@@ -30,3 +30,35 @@ async def test_raises_email_delivery_error_on_failure(
 
     with pytest.raises(EmailDeliveryError):
         await send_verification_email("user@example.com", "test-token")
+
+
+# ---------------------------------------------------------------------------
+# send_account_lock_email tests
+# ---------------------------------------------------------------------------
+
+
+@patch("app.services.email_service.resend.Emails.send")
+async def test_sends_account_lock_email_with_correct_params(
+    mock_send: MagicMock,
+) -> None:
+    mock_send.return_value = {"id": "lock-id"}
+
+    await send_account_lock_email("user@example.com")
+
+    mock_send.assert_called_once()
+    call_args = mock_send.call_args[0][0]
+    assert call_args["to"] == ["user@example.com"]
+    assert call_args["subject"] == "Your Social Badge account has been locked"
+    assert "locked" in call_args["html"].lower()
+
+
+@patch("app.services.email_service.resend.Emails.send")
+async def test_account_lock_email_raises_on_failure(
+    mock_send: MagicMock,
+) -> None:
+    mock_send.side_effect = resend.exceptions.ResendError(
+        "API error", "error_type", "400", "suggested action"
+    )
+
+    with pytest.raises(EmailDeliveryError):
+        await send_account_lock_email("user@example.com")
