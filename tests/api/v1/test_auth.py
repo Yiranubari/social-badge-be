@@ -174,10 +174,10 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
     assert query["client_id"]
     assert query["redirect_uri"]
     assert query["scope"]
-    assert query["access_type"] == ["offline"]
-    assert query["prompt"] == ["consent"]
     assert query["state"]
     assert query["state"][0]
+    assert "access_type" not in query
+    assert "prompt" not in query
 
 
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
