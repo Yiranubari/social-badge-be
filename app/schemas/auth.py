@@ -61,6 +61,8 @@ class SignupRequest(BaseModel):
 
 def validate_password_strength(val: str) -> str:
     """Validate that a password meets strength requirement"""
+    if len(val.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 bytes long")
     if len(val) < 8:
         raise ValueError("Password must be at least 8 characters long")
     if not re.search(r"[A-Z]", val):
@@ -86,7 +88,7 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(
         ...,
         description=(
-            "Must contain atleast one uppercase, one lowercase, "
+            "Must contain at least one uppercase, one lowercase, "
             "one number, and one special character."
         ),
         json_schema_extra={"example": "NewStrongPassword1!"},

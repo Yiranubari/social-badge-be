@@ -95,7 +95,7 @@ async def test_expired_password_reset_token_returns_none(
     raw_token, token_hash = generate_token()
     user_id = "550e8400-e29b-41d4-a716-446655440000"
 
-    await fake_redis.set(f"reset:{token_hash}", user_id, ex=1)
+    await fake_redis.set(f"pwd_reset:{token_hash}", user_id, ex=1)
     await asyncio.sleep(1.5)
 
     result = await get_password_reset_user_id(fake_redis, token_hash)
