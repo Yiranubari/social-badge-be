@@ -16,10 +16,15 @@ from pydantic import (
 class SignupRequest(BaseModel):
     """Schema for the signup request payload."""
 
-    name: str = Field(
+    first_name: str = Field(
         ...,
-        description="The full name of the organiser.",
-        json_schema_extra={"example": "Jane Doe", "minLength": 2},
+        description="The first name of the organiser.",
+        json_schema_extra={"example": "Jane", "minLength": 1},
+    )
+    last_name: str = Field(
+        ...,
+        description="The last name of the organiser.",
+        json_schema_extra={"example": "Doe", "minLength": 0},
     )
     email: EmailStr = Field(
         ...,
@@ -39,11 +44,18 @@ class SignupRequest(BaseModel):
         },
     )
 
-    @field_validator("name")
+    @field_validator("first_name")
     @classmethod
-    def validate_name(cls, val: str) -> str:
-        if len(val.strip()) < 2:
-            raise ValueError("Name must be at least 2 characters long")
+    def validate_first_name(cls, val: str) -> str:
+        if not val or not val.strip():
+            raise ValueError("First name cannot be empty")
+        return val.strip()
+
+    @field_validator("last_name")
+    @classmethod
+    def validate_last_name(cls, val: str) -> str:
+        if val is None:
+            return ""
         return val.strip()
 
     @field_validator("email", mode="before")
@@ -158,10 +170,15 @@ class UserResponse(BaseModel):
         json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"},
     )
 
-    name: str = Field(
+    first_name: str = Field(
         ...,
-        description="The full name of the organiser.",
-        json_schema_extra={"example": "Jane Doe"},
+        description="The first name of the organiser.",
+        json_schema_extra={"example": "Jane"},
+    )
+    last_name: str = Field(
+        ...,
+        description="The last name of the organiser.",
+        json_schema_extra={"example": "Doe"},
     )
     email: EmailStr = Field(
         ...,
