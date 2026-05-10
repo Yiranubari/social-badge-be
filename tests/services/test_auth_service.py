@@ -273,9 +273,7 @@ async def test_authenticate_with_google_links_existing_user(
     mock_exchange.return_value = {
         "access_token": "token",
         "id_token": (
-            "header."
-            "eyJzdWIiOiAiZ29vZ2xlLXN1Yi1leGlzdGluZy11c2VyIn0."
-            "signature"
+            "header.eyJzdWIiOiAiZ29vZ2xlLXN1Yi1leGlzdGluZy11c2VyIn0.signature"
         ),
     }
     mock_userinfo.return_value = {
@@ -383,9 +381,7 @@ async def test_authenticate_with_google_prefers_existing_google_subject_link(
     await store_google_oauth_state(fake_redis, "valid-state")
     mock_exchange.return_value = {
         "access_token": "token",
-        "id_token": (
-            "header.eyJzdWIiOiAiZ29vZ2xlLWxpbmtlZC1zdWJqZWN0In0.signature"
-        ),
+        "id_token": ("header.eyJzdWIiOiAiZ29vZ2xlLWxpbmtlZC1zdWJqZWN0In0.signature"),
     }
     mock_userinfo.return_value = {
         "sub": "google-linked-subject",
