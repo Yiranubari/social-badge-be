@@ -173,7 +173,8 @@ async def test_reset_password_updates_user_password(
     db_session: AsyncSession, fake_redis: FakeAsyncRedis
 ) -> None:
     user = User(
-        name="Reset User",
+        first_name="Reset User",
+        last_name="user",
         email="reset@example.com",
         password_hash=hash_password("OldStrongPassword123!"),
     )
@@ -199,7 +200,8 @@ async def test_reset_password_consumes_reset_token(
     db_session: AsyncSession, fake_redis: FakeAsyncRedis
 ) -> None:
     user = User(
-        name="Token User",
+        first_name="Token User",
+        last_name="User",
         email="token-reset@example.com",
         password_hash=hash_password("OldStrongPassword123!"),
     )

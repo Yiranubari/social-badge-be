@@ -180,7 +180,8 @@ async def test_reset_password_endpoint_success(
     fake_redis: FakeAsyncRedis,
 ) -> None:
     user = User(
-        name="API Reset User",
+        first_name="API Reset User",
+        last_name="User",
         email="api-reset@example.com",
         password_hash=hash_password("OldStrongPassword123!"),
     )
