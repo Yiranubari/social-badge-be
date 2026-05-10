@@ -19,7 +19,8 @@ async def test_verify_email_success(
     verification_token: str,
 ) -> None:
     user = User(
-        name="Verify Me",
+        first_name="Verify",
+        last_name="Me",
         email="verify_success@example.com",
         password_hash="...",  # noqa: S106
         is_email_verified=False,
@@ -69,7 +70,8 @@ async def test_verify_email_already_verified(
     verification_token: str,
 ) -> None:
     user = User(
-        name="Already Done",
+        first_name="Already",
+        last_name="Done",
         email="already_verified@example.com",
         password_hash="...",  # noqa: S106
         is_email_verified=True,

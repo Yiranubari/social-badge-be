@@ -12,7 +12,8 @@ from app.models.user import User
 async def test_user_creation(db_session: AsyncSession) -> None:
     hashed_password = hash_password("hashed_password")
     user = User(
-        name="Test User",
+        first_name="Test",
+        last_name="User",
         email="test@example.com",
         password_hash=hashed_password,
     )
@@ -22,7 +23,8 @@ async def test_user_creation(db_session: AsyncSession) -> None:
     await db_session.refresh(user)
 
     assert user.id is not None
-    assert user.name == "Test User"
+    assert user.first_name == "Test"
+    assert user.last_name == "User"
     assert user.email == "test@example.com"
     assert user.password_hash == hashed_password
     assert user.is_email_verified is False
@@ -31,11 +33,11 @@ async def test_user_creation(db_session: AsyncSession) -> None:
 
 
 async def test_user_email_unique(db_session: AsyncSession) -> None:
-    user1 = User(name="User 1", email="unique@example.com")
+    user1 = User(first_name="User", last_name="1", email="unique@example.com")
     db_session.add(user1)
     await db_session.commit()
 
-    user2 = User(name="User 2", email="unique@example.com")
+    user2 = User(first_name="User", last_name="2", email="unique@example.com")
     db_session.add(user2)
     with pytest.raises(IntegrityError):
         await db_session.commit()
@@ -44,7 +46,7 @@ async def test_user_email_unique(db_session: AsyncSession) -> None:
 
 
 async def test_user_auth_provider_relationship(db_session: AsyncSession) -> None:
-    user = User(name="Test User", email="provider@example.com")
+    user = User(first_name="Test", last_name="User", email="provider@example.com")
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)

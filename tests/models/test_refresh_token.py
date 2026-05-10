@@ -14,7 +14,7 @@ def _future_expiry(days: int = 7) -> datetime:
 
 
 async def _create_user(session: AsyncSession, email: str) -> User:
-    user = User(name="Token Owner", email=email)
+    user = User(first_name="Token", last_name="Owner", email=email)
     session.add(user)
     await session.commit()
     await session.refresh(user)
