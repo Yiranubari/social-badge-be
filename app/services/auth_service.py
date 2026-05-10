@@ -168,7 +168,7 @@ def set_refresh_cookie(response: Response, refresh_token: str) -> None:
     )
 
 
-async def check_lockout(redis: Redis, identifier: str):
+async def check_lockout(redis: Redis, identifier: str) -> None:
     key = f"{FAILED_LOGIN_PREFIX}{identifier}"
     attempts = await redis.get(key)
 
@@ -178,17 +178,17 @@ async def check_lockout(redis: Redis, identifier: str):
         raise AccountLockedError(f"Account locked. Try again in {minutes} minute(s).")
 
 
-async def increment_failed_attempts(redis: Redis, identifier: str):
+async def increment_failed_attempts(redis: Redis, identifier: str) -> int:
     key = f"{FAILED_LOGIN_PREFIX}{identifier}"
     count = await redis.incr(key)
 
     if count == 1:
         # Set expiration only on the first failed attempt
         await redis.expire(key, settings.LOCKOUT_WINDOW)
-    return count
+    return int(count)
 
 
-async def reset_attempts(redis: Redis, identifier: str):
+async def reset_attempts(redis: Redis, identifier: str) -> None:
     await redis.delete(f"{FAILED_LOGIN_PREFIX}{identifier}")
 
 

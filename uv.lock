@@ -1520,6 +1520,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "types-python-jose" },
 ]
 
 [package.metadata]
@@ -1549,6 +1550,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.11.0" },
+    { name = "types-python-jose", specifier = ">=3.5.0.20260408" },
 ]
 
 [[package]]
@@ -1638,6 +1640,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7b/27/ede8cec7596e0041ba7e7b80b47d132562f56ff454313a16f6084e555c9f/typer-0.25.0.tar.gz", hash = "sha256:123eaf9f19bb40fd268310e12a542c0c6b4fab9c98d9d23342a01ff95e3ce930", size = 120150, upload-time = "2026-04-26T08:46:14.767Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/72/193d4e586ec5a4db834a36bbeb47641a62f951f114ffd0fe5b1b46e8d56f/typer-0.25.0-py3-none-any.whl", hash = "sha256:ac01b48823d3db9a83c9e164338057eadbb1c9957a2a6b4eeb486669c560b5dc", size = 55993, upload-time = "2026-04-26T08:46:15.889Z" },
+]
+
+[[package]]
+name = "types-pyasn1"
+version = "0.6.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/c0/02f897fc8543f64fa6b1ca6a30d388e37c4ec2f761f469a2d9a29b89cdef/types_pyasn1-0.6.0.20260408.tar.gz", hash = "sha256:32dc90927adbe504fd2eee83ae30cf5ef934e5db0d1d94886071fed47eb50c8c", size = 17312, upload-time = "2026-04-08T04:27:16.874Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/a5/473e06d5aaec3730aab5a9d40c2044e673c927412c24bd7f3fa0df7e95d3/types_pyasn1-0.6.0.20260408-py3-none-any.whl", hash = "sha256:ee7fbd98bce61193c5d4f8f7812fa53cddc5b8cc5ceb9fcda6eea539947c6d6b", size = 24044, upload-time = "2026-04-08T04:27:16.002Z" },
+]
+
+[[package]]
+name = "types-python-jose"
+version = "3.5.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-pyasn1" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a1/b1/87cdb410d22913df39d7aad8864f94a4f5ad8d507ee07556888fdbe55e19/types_python_jose-3.5.0.20260408.tar.gz", hash = "sha256:3f8dccdc327bfffea7a81084ea1cea722fa499f13c1d04f7978b491dd36e0cf1", size = 11989, upload-time = "2026-04-08T04:34:10.577Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/83/df2b34e64f0a674935d718471cf10fb392a7e5bdb0e9e7c739885b62d274/types_python_jose-3.5.0.20260408-py3-none-any.whl", hash = "sha256:968d8a8eac1ff9da249d6335a2bb9f82288d59ba23afe91fcc2662eb9f485e2a", size = 14694, upload-time = "2026-04-08T04:34:09.747Z" },
 ]
 
 [[package]]

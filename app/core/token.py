@@ -66,7 +66,7 @@ def create_access_token(user_id: UUID) -> str:
         "iat": datetime.now(UTC),
         "jti": secrets.token_hex(16),
     }
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return str(jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM))
 
 
 def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
