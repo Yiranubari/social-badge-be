@@ -123,3 +123,13 @@ class UserResponse(BaseModel):
         if val is not None and not isinstance(val, UUID | str | bytes):
             return str(val)
         return val
+
+
+class VerifyEmailRequest(BaseModel):
+    """Schema for the email verification request payload."""
+
+    token: str = Field(
+        ...,
+        description="The one-time verification token",
+        json_schema_extra={"example": "abcdef123456"},
+    )

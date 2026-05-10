@@ -16,6 +16,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:$PATH"
+            source $HOME/.local/bin/env 2>/dev/null || true
             cd ~/social-badge-be
             git pull origin ${{ github.ref_name }}
             uv sync
