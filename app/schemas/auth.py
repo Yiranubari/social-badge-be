@@ -154,4 +154,11 @@ class LoginResponse(BaseModel):
     user: UserResponse = Field(
         ...,
         description="The authenticated user's profile details.",
+class VerifyEmailRequest(BaseModel):
+    """Schema for the email verification request payload."""
+
+    token: str = Field(
+        ...,
+        description="The one-time verification token",
+        json_schema_extra={"example": "abcdef123456"},
     )

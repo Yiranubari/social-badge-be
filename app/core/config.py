@@ -1,7 +1,9 @@
+import json
 from functools import lru_cache
 from typing import Literal, Self
+from typing import Any, Self
 
-from pydantic import PostgresDsn, RedisDsn, model_validator
+from pydantic import PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +43,30 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
     FRONTEND_URL: str = "http://localhost:5173"
+    ALLOWED_ORIGINS: list[str] | str = []
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, val: Any) -> list[str] | str:
+        if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
+            try:
+                decoded = json.loads(val)
+                if isinstance(decoded, list):
+                    return decoded
+            except json.JSONDecodeError:
+                pass
+        if isinstance(val, str) and "," in val:
+            return [i.strip() for i in val.split(",")]
+        elif isinstance(val, str):
+            return [val.strip()]
+        elif isinstance(val, list):
+            return val
+        raise ValueError(f"Invalid format for ALLOWED_ORIGINS: {val}")
+
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    GOOGLE_OAUTH_STATE_TTL_MINUTES: int = 10
 
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
 
@@ -49,12 +75,18 @@ class Settings(BaseSettings):
         environment = self.ENVIRONMENT.strip().lower()
         api_key = self.RESEND_API_KEY.strip()
         from_email = self.RESEND_FROM_EMAIL.strip()
+        google_client_id = self.GOOGLE_CLIENT_ID.strip()
+        google_client_secret = self.GOOGLE_CLIENT_SECRET.strip()
 
         if environment == "production":
             if api_key in {"", "re_dummy_api_key", "re_your_api_key_here"}:
                 raise ValueError("RESEND_API_KEY must be set in production")
             if from_email in {"", "noreply@yourdomain.com"}:
                 raise ValueError("RESEND_FROM_EMAIL must be set in production")
+            if google_client_id in {"", "your_google_client_id_here"}:
+                raise ValueError("GOOGLE_CLIENT_ID must be set in production")
+            if google_client_secret in {"", "your_google_client_secret_here"}:
+                raise ValueError("GOOGLE_CLIENT_SECRET must be set in production")
         return self
 
 

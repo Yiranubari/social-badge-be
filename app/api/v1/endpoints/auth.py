@@ -22,6 +22,24 @@ from app.services.auth_service import (
     request_password_reset,
     set_refresh_cookie,
     signin,
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import RedirectResponse
+
+from app.api.deps import DBSession, RedisClient
+from app.core.exceptions import EmailConflictError, GoogleOAuthError
+from app.core.rate_limit import limiter
+from app.models.user import User
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    SignupRequest,
+    UserResponse,
+    VerifyEmailRequest,
+)
+from app.schemas.response import ErrorResponse, SuccessResponse
+from app.services.auth_service import (
+    authenticate_with_google,
+    build_google_auth_url,
+    request_password_reset,
     signup,
 )
 
@@ -182,7 +200,7 @@ async def login(
 
 @router.post(
     "/forgot-password",
-    response_model=SuccessResponse,
+    response_model=SuccessResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Request a password reset email",
     description=(
@@ -224,4 +242,129 @@ async def forgot_password(
             "a password reset email has been sent."
         ),
         data=None,
+    )
+
+
+@router.post(
+    "/verify-email",
+    response_model=SuccessResponse[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Verify email token",
+    responses={
+        200: {"description": "Email verified successfully"},
+        400: {"model": ErrorResponse, "description": "User already verified"},
+        401: {"model": ErrorResponse, "description": "Token expired or invalid"},
+    },
+)
+async def verify_email(
+    session: DBSession,
+    redis: RedisClient,
+    payload: VerifyEmailRequest,
+) -> Any:
+    token_key = f"verification_token:{payload.token}"
+    user_id = await redis.getdel(token_key)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please request a new verification email",
+        )
+
+    user = await session.get(User, user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please request a new verification email",
+        )
+
+    if user.is_email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already verified",
+        )
+
+    user.is_email_verified = True
+    session.add(user)
+    await session.commit()
+
+    return SuccessResponse(message="Email verified", data={"next": "onboarding"})
+
+
+@router.get(
+    "/google",
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    summary="Start Google OAuth",
+    description="Redirects the user to Google's OAuth consent screen.",
+    responses={
+        307: {"description": "Redirect to Google OAuth consent screen"},
+    },
+)
+@limiter.limit("10/minute")
+async def google_login(request: Request, redis: RedisClient) -> RedirectResponse:
+    auth_url = await build_google_auth_url(redis)
+    return RedirectResponse(
+        url=auth_url,
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
+
+
+@router.get(
+    "/google/callback",
+    response_model=SuccessResponse[UserResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Handle Google OAuth callback",
+    description=(
+        "Exchanges the Google authorization code for user information, then "
+        "creates or signs in the corresponding Social Badge account."
+    ),
+    responses={
+        200: {
+            "description": "Google authentication completed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Google authentication successful.",
+                        "data": {
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Jane Doe",
+                            "email": "jane@example.com",
+                            "is_email_verified": True,
+                            "profile_photo_url": "https://example.com/photo.jpg",
+                            "created_at": "2026-05-09T05:28:33Z",
+                            "updated_at": "2026-05-09T05:28:33Z",
+                        },
+                    }
+                }
+            },
+        },
+        400: {"model": ErrorResponse, "description": "Google OAuth failed"},
+        409: {
+            "model": ErrorResponse,
+            "description": "Google sign-in could not be safely linked",
+        },
+    },
+)
+@limiter.limit("10/minute")
+async def google_callback(
+    request: Request,
+    session: DBSession,
+    redis: RedisClient,
+    code: str = Query(..., description="Google authorization code"),
+    state: str = Query(..., description="OAuth state used to prevent CSRF"),
+) -> SuccessResponse[UserResponse]:
+    try:
+        user, is_new_user = await authenticate_with_google(session, redis, code, state)
+    except GoogleOAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    message = (
+        "Google account connected and registration completed."
+        if is_new_user
+        else "Google authentication successful."
+    )
+    return SuccessResponse(
+        message=message,
+        data=UserResponse.model_validate(user),
     )

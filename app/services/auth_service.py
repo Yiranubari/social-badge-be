@@ -1,7 +1,12 @@
 import asyncio
+import base64
+import binascii
+import json
 import logging
+from urllib.parse import urlencode
 
 from fastapi import Response
+import httpx
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -16,11 +21,15 @@ from app.core.exceptions import (
     InvalidCredentialsError,
 )
 from app.core.security import hash_password, verify_password
+from app.core.exceptions import EmailConflictError, EmailDeliveryError, GoogleOAuthError
+from app.core.security import hash_password
 from app.core.token import (
     create_access_token,
     create_refresh_token,
     generate_token,
     hash_token,
+    get_google_oauth_state,
+    store_google_oauth_state,
     store_password_reset_token,
     store_verification_token,
 )
@@ -35,6 +44,10 @@ from app.services.email_service import (
 )
 
 logger = logging.getLogger(__name__)
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+GOOGLE_SCOPES = ("openid", "email", "profile")
 
 FAILED_LOGIN_PREFIX = "failed_login:"
 
@@ -203,3 +216,250 @@ async def request_password_reset(
         await send_password_reset_email(payload.email, raw_token)
     except EmailDeliveryError:
         logger.warning("Failed to send password reset email to %s", payload.email)
+
+
+async def build_google_auth_url(redis: Redis) -> str:
+    """
+    Returns Google Auth URL with params and a stored state for CSRF protection.
+    """
+    state, _ = generate_token()
+    await store_google_oauth_state(redis, state)
+
+    params = urlencode(
+        {
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+            "response_type": "code",
+            "scope": " ".join(GOOGLE_SCOPES),
+            "state": state,
+        }
+    )
+    return f"{GOOGLE_AUTH_URL}?{params}"
+
+
+async def authenticate_with_google(
+    session: AsyncSession,
+    redis: Redis,
+    code: str,
+    state: str,
+) -> tuple[User, bool]:
+    """
+    Handles the Google OAuth callback by validating state, exchanging code for token,
+    fetching user info, and upserting the user record.
+    """
+    state_is_valid = await get_google_oauth_state(redis, state)
+    if not state_is_valid:
+        raise GoogleOAuthError("Invalid or expired Google OAuth state")
+
+    token_payload = await _exchange_google_code(code)
+    user_info = await _fetch_google_userinfo(token_payload["access_token"])  # type: ignore
+    _validate_google_subject_consistency(
+        token_payload.get("id_token"), user_info["sub"]
+    )
+    user, is_new_user = await _upsert_google_user(session, user_info)
+    return user, is_new_user
+
+
+async def _exchange_google_code(code: str) -> dict[str, str | None]:
+    """
+    Exchanges the authorization code for an access token
+    by calling Google's token endpoint.
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise GoogleOAuthError(
+                "Google token exchange failed",
+                status_code=exc.response.status_code,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GoogleOAuthError(
+                "Could not reach Google token endpoint",
+                status_code=502,
+            ) from exc
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise GoogleOAuthError("Google token response was not a JSON object")
+    access_token = payload.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise GoogleOAuthError("Google token response did not include an access token")
+    id_token = payload.get("id_token")
+    if id_token is not None and (not isinstance(id_token, str) or not id_token):
+        raise GoogleOAuthError("Google token response included an invalid ID token")
+    return {"access_token": access_token, "id_token": id_token}
+
+
+async def _fetch_google_userinfo(access_token: str) -> dict[str, str | bool | None]:
+    """Fetches the user's profile information from Google using the access token."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise GoogleOAuthError(
+                "Google user info lookup failed",
+                status_code=exc.response.status_code,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GoogleOAuthError(
+                "Could not reach Google user info endpoint",
+                status_code=502,
+            ) from exc
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise GoogleOAuthError("Google user info response was not a JSON object")
+    subject = payload.get("sub")
+    email = payload.get("email")
+    email_verified = payload.get("email_verified")
+    name = payload.get("name")
+
+    if not isinstance(subject, str) or not subject:
+        raise GoogleOAuthError("Google account did not provide a stable account ID")
+    if not isinstance(email, str) or not email:
+        raise GoogleOAuthError("Google account did not provide an email address")
+    if email_verified is not True:
+        raise GoogleOAuthError("Google account email is not verified")
+    if not isinstance(name, str) or not name.strip():
+        raise GoogleOAuthError("Google account did not provide a valid display name")
+
+    picture = payload.get("picture")
+    picture_url = picture if isinstance(picture, str) and picture else None
+
+    return {
+        "sub": subject,
+        "email": email,
+        "name": name.strip(),
+        "picture": picture_url,
+    }
+
+
+def _validate_google_subject_consistency(
+    id_token: str | None, userinfo_subject: str | bool | None
+) -> None:
+    """Cross-check the token and userinfo subjects when Google returns both."""
+    if id_token is None:
+        return
+
+    token_subject = _extract_google_id_token_subject(id_token)
+    if token_subject != userinfo_subject:
+        raise GoogleOAuthError(
+            "Google token subject did not match the user info response"
+        )
+
+
+def _extract_google_id_token_subject(id_token: str) -> str:
+    """Read the JWT payload subject for consistency checks.
+
+    This is intentionally limited to subject extraction so we can compare
+    the token endpoint identity with the userinfo identity without adding
+    a separate JWT verification dependency.
+    """
+    segments = id_token.split(".")
+    if len(segments) != 3:
+        raise GoogleOAuthError("Google token response included a malformed ID token")
+
+    payload_segment = segments[1]
+    padding = "=" * (-len(payload_segment) % 4)
+
+    try:
+        payload_bytes = base64.urlsafe_b64decode(payload_segment + padding)
+        payload = json.loads(payload_bytes)
+    except (binascii.Error, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise GoogleOAuthError(
+            "Google token response included a malformed ID token"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise GoogleOAuthError("Google token response did not include a valid subject")
+
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise GoogleOAuthError("Google token response did not include a valid subject")
+    return subject
+
+
+async def _upsert_google_user(
+    session: AsyncSession,
+    user_info: dict[str, str | bool | None],
+) -> tuple[User, bool]:
+    """
+    Finds or creates a User record based on Google user info,
+    and ensures an AuthProvider record exists.
+    """
+    google_subject = str(user_info["sub"])
+    email = str(user_info["email"])
+    name = str(user_info["name"])
+    picture = user_info["picture"]
+
+    provider_result = await session.execute(
+        select(AuthProvider).where(
+            AuthProvider.provider == "google",
+            AuthProvider.provider_user_id == google_subject,
+        )
+    )
+    provider = provider_result.scalars().first()
+
+    if provider is not None:
+        user = await session.get(User, provider.user_id)
+        if user is None:
+            raise GoogleOAuthError("Linked Google account references a missing user")
+        is_new_user = False
+    else:
+        existing_result = await session.execute(select(User).where(User.email == email))
+        user = existing_result.scalars().first()
+        is_new_user = user is None
+
+        if user is None:
+            user = User(
+                name=name,
+                email=email,
+                password_hash=None,
+                is_email_verified=True,
+                profile_photo_url=picture if isinstance(picture, str) else None,
+            )
+            session.add(user)
+            await session.flush()
+        else:
+            if user.password_hash is not None and not user.is_email_verified:
+                raise GoogleOAuthError(
+                    (
+                        "An unverified password account already exists for this email. "
+                        "Please sign in with your password and verify your email "
+                        "before linking Google."
+                    ),
+                    status_code=409,
+                )
+
+            user.is_email_verified = True
+            if isinstance(picture, str):
+                user.profile_photo_url = picture
+
+    if provider is None:
+        session.add(
+            AuthProvider(
+                provider="google",
+                provider_user_id=google_subject,
+                user_id=user.id,
+                label="Google",
+            )
+        )
+
+    await session.commit()
+    await session.refresh(user)
+    return user, is_new_user

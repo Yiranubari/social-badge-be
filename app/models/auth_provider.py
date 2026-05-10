@@ -16,10 +16,18 @@ class AuthProvider(Base):
     """Tracks which authentication providers are linked to a user account."""
 
     __tablename__ = "auth_providers"
-    __table_args__ = (UniqueConstraint("provider", "user_id", name="uq_provider_user"),)
+    __table_args__ = (
+        UniqueConstraint("provider", "user_id", name="uq_provider_user"),
+        UniqueConstraint(
+            "provider",
+            "provider_user_id",
+            name="uq_provider_provider_user_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
     provider: Mapped[str] = mapped_column(String(50))
+    provider_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
     )

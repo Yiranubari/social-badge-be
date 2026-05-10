@@ -1,5 +1,9 @@
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, patch
+import uuid
+from datetime import UTC, datetime
+from unittest.mock import ANY, AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fakeredis import FakeAsyncRedis
@@ -11,6 +15,17 @@ from app.core.config import settings
 from app.core.exceptions import EmailDeliveryError
 from app.core.security import hash_password
 from app.models.user import User
+from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
+from app.models.user import User
+
+
+@pytest.fixture
+def valid_signup_payload() -> dict[str, str]:
+    return {
+        "name": "API Test User",
+        "email": "apitest@example.com",
+        "password": "StrongPassword1!",  # noqa: S106
+    }
 
 
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
@@ -302,3 +317,80 @@ async def test_forgot_password_endpoint_rate_limit(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Rate limit exceeded"
+
+
+async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
+    response = await client.get("/api/v1/auth/google", follow_redirects=False)
+
+    assert response.status_code == 307
+    redirect_url = response.headers["location"]
+    parsed = urlparse(redirect_url)
+    query = parse_qs(parsed.query)
+
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "accounts.google.com"
+    assert parsed.path == "/o/oauth2/v2/auth"
+    assert query["response_type"] == ["code"]
+    assert query["client_id"]
+    assert query["redirect_uri"]
+    assert query["scope"]
+    assert query["access_type"] == ["offline"]
+    assert query["prompt"] == ["consent"]
+    assert query["state"]
+    assert query["state"][0]
+
+
+@patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
+async def test_google_callback_success(
+    mock_authenticate: AsyncMock, client: AsyncClient
+) -> None:
+    user = User(
+        id=uuid.uuid4(),
+        name="Google User",
+        email="google@example.com",
+        is_email_verified=True,
+        profile_photo_url="https://example.com/photo.jpg",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    mock_authenticate.return_value = (user, False)
+
+    response = await client.get(
+        "/api/v1/auth/google/callback?code=test-code&state=test-state"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == "Google authentication successful."
+    assert data["data"]["email"] == "google@example.com"
+    mock_authenticate.assert_awaited_once_with(
+        ANY,
+        ANY,
+        "test-code",
+        "test-state",
+    )
+
+
+@patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
+async def test_google_callback_returns_error_response(
+    mock_authenticate: AsyncMock, client: AsyncClient
+) -> None:
+    mock_authenticate.side_effect = GoogleOAuthError(
+        "Invalid or expired Google OAuth state"
+    )
+
+    response = await client.get(
+        "/api/v1/auth/google/callback?code=test-code&state=test-state"
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Invalid or expired Google OAuth state"
+    mock_authenticate.assert_awaited_once_with(
+        ANY,
+        ANY,
+        "test-code",
+        "test-state",
+    )
