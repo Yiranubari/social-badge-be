@@ -101,7 +101,9 @@ async def register(
         },
     },
 )
-async def reset_oganizer_password(
+@limiter.limit("5/minute")
+async def reset_organizer_password(
+    request: Request,
     payload: ResetPasswordRequest,
     session: DBSession,
     redis: RedisClient,

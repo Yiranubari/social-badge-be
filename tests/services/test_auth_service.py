@@ -212,3 +212,18 @@ async def test_reset_password_rejects_token_for_missing_user(
             fake_redis,
             _make_reset_payload(raw_token),
         )
+
+
+async def test_reset_password_rejects_malformed_user_id(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    raw_token, token_hash = generate_token()
+    await store_password_reset_token(fake_redis, token_hash, "not-a-uuid")
+
+    with pytest.raises(InvalidPasswordResetTokenError):
+        await reset_password(
+            db_session,
+            fake_redis,
+            _make_reset_payload(raw_token),
+        )

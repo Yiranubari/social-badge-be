@@ -111,7 +111,7 @@ def test_reset_password_request() -> None:
     assert req.confirm_password == "NewStrongPassword123!"  # noqa: S105
 
 
-def test_reset_pasword_request_rejects_password_mismatch() -> None:
+def test_reset_password_request_rejects_password_mismatch() -> None:
     data = {
         "token": "reset-token",
         "new_password": "NewStrongPassword123!",
@@ -250,3 +250,21 @@ async def test_reset_password_endpoint_rejects_weak_password(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Password must be at least 8 characters long"
+
+
+async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
+    payload = {
+        "token": "missing-token",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "NewStrongPassword123!",
+    }
+
+    for _ in range(5):
+        await client.post("/api/v1/auth/reset-password", json=payload)
+
+    response = await client.post("/api/v1/auth/reset-password", json=payload)
+
+    assert response.status_code == 429
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Rate limit exceeded"

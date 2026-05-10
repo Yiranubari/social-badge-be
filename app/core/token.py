@@ -72,8 +72,7 @@ async def get_password_reset_user_id(
 ) -> str | None:
     """Look up and consume a password reset token."""
     key = f"{RESET_TOKEN_PREFIX}{token_hash}"
-    user_id = await redis.get(key)
+    user_id = await redis.getdel(key)
     if user_id is not None:
-        await redis.delete(key)
         return str(user_id)
     return None

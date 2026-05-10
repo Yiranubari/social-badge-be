@@ -75,7 +75,12 @@ async def reset_password(
     if user_id is None:
         raise InvalidPasswordResetTokenError
 
-    result = await session.execute(select(User).where(User.id == UUID(user_id)))
+    try:
+        parsed_user_id = UUID(user_id)
+    except ValueError as exc:
+        raise InvalidPasswordResetTokenError from exc
+
+    result = await session.execute(select(User).where(User.id == parsed_user_id))
     user = result.scalars().first()
 
     if user is None:
