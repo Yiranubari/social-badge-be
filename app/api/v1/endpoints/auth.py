@@ -273,7 +273,7 @@ async def login(
     },
 )
 @limiter.limit("10/minute")
-async def refresh_token_endpoint(
+async def refresh(
     request: Request,
     response: Response,
     session: DBSession,
@@ -319,7 +319,7 @@ async def refresh_token_endpoint(
     },
 )
 @limiter.limit("10/minute")
-async def logout_endpoint(
+async def logout(
     request: Request,
     response: Response,
     session: DBSession,
