@@ -235,7 +235,8 @@ async def login(
     return SuccessResponse(
         message="Login successful",
         data=LoginResponse(
-            access_token=access_token, user=UserResponse.model_validate(user)
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
         ),
     )
 
@@ -399,15 +400,26 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
 @limiter.limit("10/minute")
 async def google_callback(
     request: Request,
+    response: Response,
     session: DBSession,
     redis: RedisClient,
     code: str = Query(..., description="Google authorization code"),
     state: str = Query(..., description="OAuth state used to prevent CSRF"),
-) -> SuccessResponse[UserResponse]:
-    try:
-        user, is_new_user = await authenticate_with_google(session, redis, code, state)
-    except GoogleOAuthError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+) -> SuccessResponse[LoginResponse]:
+    user, is_new_user = await authenticate_with_google(session, redis, code, state)
+
+    access_token = create_access_token(user.id)
+    raw_refresh_token, expire = create_refresh_token(user.id)
+
+    refresh_token = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(raw_refresh_token),
+        expires_at=expire,
+    )
+    session.add(refresh_token)
+    await session.commit()
+
+    set_refresh_cookie(response, raw_refresh_token)
 
     message = (
         "Google account connected and registration completed."
@@ -416,5 +428,8 @@ async def google_callback(
     )
     return SuccessResponse(
         message=message,
-        data=UserResponse.model_validate(user),
+        data=LoginResponse(
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
+        ),
     )
