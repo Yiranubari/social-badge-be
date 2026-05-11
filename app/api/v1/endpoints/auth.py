@@ -8,12 +8,16 @@ from app.core.exceptions import (
     AccountLockedError,
     EmailConflictError,
     EmailNotVerifiedError,
-    GoogleOAuthError,
     InvalidCredentialsError,
     InvalidPasswordResetTokenError,
 )
 from app.core.rate_limit import limiter
-from app.core.token import hash_token
+from app.core.token import (
+    create_access_token,
+    create_refresh_token,
+    hash_token,
+)
+from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
