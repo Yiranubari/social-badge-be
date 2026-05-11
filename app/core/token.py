@@ -11,6 +11,19 @@ from app.core.config import settings
 TOKEN_PREFIX = "verify:"  # noqa: S105
 PASSWORD_RESET_PREFIX = "pwd_reset:"  # noqa: S105
 GOOGLE_STATE_PREFIX = "oauth:google:state:"
+BLACKLIST_PREFIX = "blacklist:jti:"
+
+
+async def blacklist_token(redis: Redis, jti: str, remaining_seconds: int) -> None:
+    """Add token JTI to Redis blacklist with TTL equal to remaining lifetime."""
+    if remaining_seconds > 0:
+        await redis.set(f"{BLACKLIST_PREFIX}{jti}", "1", ex=remaining_seconds)
+
+
+async def is_token_blacklisted(redis: Redis, jti: str) -> bool:
+    """Check if a token's JTI exists in the Redis blacklist."""
+    exists = await redis.exists(f"{BLACKLIST_PREFIX}{jti}")
+    return bool(exists)
 
 
 def generate_token() -> tuple[str, str]:

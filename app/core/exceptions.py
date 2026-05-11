@@ -28,6 +28,12 @@ class EmailNotVerifiedError(Exception):
     pass
 
 
+class InvalidRefreshTokenError(Exception):
+    """Exception raised when a refresh token is invalid, expired, or revoked."""
+
+    pass
+
+
 class GoogleOAuthError(Exception):
     def __init__(self, message: str, status_code: int = 400) -> None:
         super().__init__(message)

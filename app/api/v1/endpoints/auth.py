@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.api.deps import DBSession, RedisClient
+from app.core.config import settings
 from app.core.exceptions import (
     AccountLockedError,
     EmailConflictError,
@@ -11,6 +12,7 @@ from app.core.exceptions import (
     GoogleOAuthError,
     InvalidCredentialsError,
     InvalidPasswordResetTokenError,
+    InvalidRefreshTokenError,
 )
 from app.core.rate_limit import limiter
 from app.core.token import hash_token
@@ -19,6 +21,7 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
+    RefreshResponse,
     ResetPasswordRequest,
     SignupRequest,
     UserResponse,
@@ -28,6 +31,8 @@ from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
     authenticate_with_google,
     build_google_auth_url,
+    logout_session,
+    refresh_session,
     request_password_reset,
     reset_password,
     set_refresh_cookie,
@@ -237,6 +242,103 @@ async def login(
         data=LoginResponse(
             access_token=access_token, user=UserResponse.model_validate(user)
         ),
+    )
+
+
+@router.post(
+    "/refresh",
+    response_model=SuccessResponse[RefreshResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Refresh access token",
+    responses={
+        200: {
+            "description": "Token refreshed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Token refreshed",
+                        "data": {
+                            "access_token": "eyJhbGciOiJIIsInR5cCI6IkpXVCJ9.ey..."
+                        },
+                    }
+                }
+            },
+        },
+        401: {
+            "model": ErrorResponse,
+            "description": "Invalid, expired, or missing refresh token",
+        },
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+    },
+)
+@limiter.limit("10/minute")
+async def refresh_token_endpoint(
+    request: Request,
+    response: Response,
+    session: DBSession,
+    redis: RedisClient,
+) -> SuccessResponse[RefreshResponse]:
+    refresh_token = request.cookies.get(settings.REFRESH_COOKIE)
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token missing",
+        )
+
+    auth_header = request.headers.get("authorization")
+    access_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header.split(" ", 1)[1]
+
+    try:
+        new_access, new_refresh = await refresh_session(
+            session, redis, refresh_token, access_token
+        )
+    except InvalidRefreshTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        ) from exc
+
+    set_refresh_cookie(response, new_refresh)
+
+    return SuccessResponse(
+        message="Token refreshed",
+        data=RefreshResponse(access_token=new_access),
+    )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Logout user",
+    responses={
+        204: {"description": "Logout successful (no content)"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+    },
+)
+@limiter.limit("10/minute")
+async def logout_endpoint(
+    request: Request,
+    response: Response,
+    session: DBSession,
+    redis: RedisClient,
+) -> None:
+    refresh_token = request.cookies.get(settings.REFRESH_COOKIE)
+
+    auth_header = request.headers.get("authorization")
+    access_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header.split(" ", 1)[1]
+
+    await logout_session(session, redis, refresh_token, access_token)
+
+    response.delete_cookie(
+        key=settings.REFRESH_COOKIE,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.COOKIE_SAMESITE,
     )
 
 
