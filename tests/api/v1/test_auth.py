@@ -579,3 +579,76 @@ async def test_google_callback_returns_error_response(
         "test-code",
         "test-state",
     )
+
+
+@patch("app.api.v1.endpoints.auth.refresh_session", new_callable=AsyncMock)
+async def test_refresh_token_endpoint_success(
+    mock_refresh: AsyncMock, client: AsyncClient
+) -> None:
+    mock_refresh.return_value = ("new_access_token", "new_raw_refresh_token")
+
+    client.cookies.set(settings.REFRESH_COOKIE, "old_refresh_token")
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == "Token refreshed"
+    assert data["data"]["access_token"] == "new_access_token"  # noqa: S105
+
+    mock_refresh.assert_awaited_once_with(ANY, ANY, "old_refresh_token", None)
+
+    # Verify cookie was set
+    assert settings.REFRESH_COOKIE in response.cookies
+    assert response.cookies[settings.REFRESH_COOKIE] == "new_raw_refresh_token"
+
+
+async def test_refresh_token_endpoint_missing_cookie(client: AsyncClient) -> None:
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Refresh token missing"
+
+
+@patch("app.api.v1.endpoints.auth.refresh_session", new_callable=AsyncMock)
+async def test_refresh_token_endpoint_invalid_token(
+    mock_refresh: AsyncMock, client: AsyncClient
+) -> None:
+    from app.core.exceptions import InvalidRefreshTokenError
+
+    mock_refresh.side_effect = InvalidRefreshTokenError
+
+    client.cookies.set(settings.REFRESH_COOKIE, "invalid_refresh_token")
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Invalid or expired refresh token"
+
+
+@patch("app.api.v1.endpoints.auth.logout_session", new_callable=AsyncMock)
+async def test_logout_endpoint_success(
+    mock_logout: AsyncMock, client: AsyncClient
+) -> None:
+    client.cookies.set(settings.REFRESH_COOKIE, "some_refresh_token")
+
+    response = await client.post(
+        "/api/v1/auth/logout", headers={"Authorization": "Bearer some_access_token"}
+    )
+
+    assert response.status_code == 204
+    assert response.text == ""
+
+    mock_logout.assert_awaited_once_with(
+        ANY, ANY, "some_refresh_token", "some_access_token"
+    )
+
+    # Verify cookie was deleted
+    set_cookie_header = response.headers.get("set-cookie", "")
+    assert settings.REFRESH_COOKIE in set_cookie_header
+    assert "Max-Age=0" in set_cookie_header or "expires=" in set_cookie_header.lower()
