@@ -25,6 +25,3 @@ env
 .pytest_cache/
 .coverage
 htmlcov/
-
-# alembic
-alembic/versions/
