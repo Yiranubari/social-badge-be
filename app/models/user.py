@@ -49,7 +49,6 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-
     # Relationship to OrganiserTemplate
     organiser_templates: Mapped[list["OrganiserTemplate"]] = relationship(
         "OrganiserTemplate",

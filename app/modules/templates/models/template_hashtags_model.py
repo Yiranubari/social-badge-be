@@ -15,21 +15,16 @@ class TemplateHashtag(Base):
     __tablename__ = "template_hashtags"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True,
-        default=uuid7,
-        index=True,
-        nullable=False
+        primary_key=True, default=uuid7, index=True, nullable=False
     )
     template_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organiser_templates.id", ondelete="CASCADE"),
         index=True,
-        nullable=False
+        nullable=False,
     )
     hashtag: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
 
-
     # Relationship back to the OrganiserTemplate
     organiser_template: Mapped["OrganiserTemplate"] = relationship(
-        "OrganiserTemplate",
-        back_populates="hashtags"
+        "OrganiserTemplate", back_populates="hashtags"
     )

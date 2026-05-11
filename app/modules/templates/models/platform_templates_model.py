@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -17,22 +17,18 @@ class PlatformTemplate(Base):
     __tablename__ = "platform_templates"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, default=uuid7,
-        index=True, nullable=False
+        primary_key=True, default=uuid7, index=True, nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    canvas_data: Mapped[dict] = mapped_column(JSONB, nullable=True)
+    canvas_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=True)
     thumbnail_url: Mapped[str] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=True
+        DateTime(timezone=True), server_default=func.now(), nullable=True
     )
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
-
 
     # Relationship to OrganiserTemplate
     organiser_templates: Mapped[list["OrganiserTemplate"]] = relationship(
