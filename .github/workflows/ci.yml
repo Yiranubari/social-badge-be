@@ -89,6 +89,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key-not-used-in-production
       RESEND_API_KEY: re_dummy_api_key_for_ci
       RESEND_FROM_EMAIL: test@example.com
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v6
 

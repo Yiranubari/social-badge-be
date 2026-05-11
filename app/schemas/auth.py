@@ -237,3 +237,13 @@ class VerifyEmailRequest(BaseModel):
         description="The one-time verification token",
         json_schema_extra={"example": "abcdef123456"},
     )
+
+
+class RefreshResponse(BaseModel):
+    """Schema for a successful token refresh response."""
+
+    access_token: str = Field(
+        ...,
+        description="Valid JWT access token issued on refresh.",
+        json_schema_extra={"example": "eyJhbGciOiJIIsInR5cCI6IkpXVCJ9.ey..."},
+    )
