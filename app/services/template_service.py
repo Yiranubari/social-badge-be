@@ -123,6 +123,7 @@ async def unpublish_template(
         raise NotTemplateOwnerError
 
     template.is_published = False
+    template.published_at = None
     await session.commit()
     await session.refresh(template)
 

@@ -247,6 +247,7 @@ async def test_unpublish_template_success(
     assert data["message"] == "Template unpublished successfully."
     assert data["data"]["is_published"] is False
     assert data["data"]["share_slug"] == original_slug
+    assert data["data"]["published_at"] is None
 
 
 async def test_republish_preserves_slug(
