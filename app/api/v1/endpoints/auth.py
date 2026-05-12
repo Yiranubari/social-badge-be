@@ -26,6 +26,7 @@ from app.schemas.auth import (
     SignupRequest,
     UserResponse,
     VerifyEmailRequest,
+    ResendVerificationRequest,
 )
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
@@ -38,6 +39,7 @@ from app.services.auth_service import (
     set_refresh_cookie,
     signin,
     signup,
+    resend_verification_email,
 )
 
 router = APIRouter()
@@ -115,6 +117,60 @@ async def register(
     return SuccessResponse(
         message=message,
         data=UserResponse.model_validate(user),
+    )
+
+
+@router.post(
+    "/resend-verification-email",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Resend account verification email",
+    description=(
+        "Resends the account verification email if the user exists and has not "
+        "yet verified their email address. If the email is already verified or "
+        "not registered, the request will still succeed silently."
+    ),
+    responses={
+        200: {
+            "description": "Verification email resent (or silently ignored)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": (
+                            "If your email is registered and unverified, "
+                            "a new verification email has been sent."
+                        ),
+                        "data": None,
+                    }
+                }
+            },
+        },
+        422: {
+            "model": ErrorResponse,
+            "description": "Validation error in the payload",
+        },
+        429: {
+            "model": ErrorResponse,
+            "description": "Rate limit exceeded",
+        },
+    },
+)
+@limiter.limit("5/minute")
+async def resend_verification(
+    request: Request,
+    payload: ResendVerificationRequest,
+    session: DBSession,
+    redis: RedisClient,
+) -> Any:
+    await resend_verification_email(session, redis, payload)
+
+    return SuccessResponse(
+        message=(
+            "If your email is registered and unverified, "
+            "a new verification email has been sent."
+        ),
+        data=None,
     )
 
 

@@ -87,6 +87,14 @@ def validate_password_strength(val: str) -> str:
         raise ValueError("Password must contain at least one special character")
     return val
 
+# Schema for the resend verification token request payload. Emmanuel
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr = Field(
+        ...,
+        description="The email address to resend the verification token to.",
+        json_schema_extra={"example": "jane@example.com"},
+    )
+
 
 class ResetPasswordRequest(BaseModel):
     """Schema for resetting a user's password with reset token"""

@@ -19,6 +19,8 @@ from app.models.user import User
 from app.schemas.auth import ResetPasswordRequest
 
 
+
+
 @pytest.fixture
 def valid_signup_payload() -> dict[str, str]:
     return {
@@ -108,6 +110,9 @@ async def test_signup_endpoint_rate_limit(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Rate limit exceeded"
+
+
+
 
 
 def test_reset_password_request() -> None:
@@ -283,6 +288,157 @@ async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
     assert data["status"] == "error"
     assert data["message"] == "Rate limit exceeded"
 
+
+
+
+# ------------------------------------------------------
+# RESEND VERIFICATION EMAIL TESTS
+# ------------------------------------------------------
+
+from unittest.mock import AsyncMock, patch
+from httpx import AsyncClient
+import pytest
+
+from app.models.user import User
+from app.core.security import hash_password
+
+
+@pytest.fixture
+async def unverified_resend_user(db_session) -> dict[str, str]:
+    creds = {
+        "email": "resend@example.com",
+        "password": "StrongPassword1!",
+    }
+
+    user = User(
+        first_name="Resend",
+        last_name="User",
+        email=creds["email"],
+        password_hash=hash_password(creds["password"]),
+        is_email_verified=False,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    return creds
+
+
+# SUCCESS CASE
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_success(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+    unverified_resend_user: dict[str, str],
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": unverified_resend_user["email"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "success"
+    assert (
+        data["message"]
+        == "If your email is registered and unverified, "
+        "a new verification email has been sent."
+    )
+
+    mock_send_email.assert_called_once()
+
+
+# NON-EXISTENT USER (NO ENUMERATION)
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_nonexistent_user(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": "ghost@example.com"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "success"
+    assert "verification email has been sent" in data["message"]
+
+    mock_send_email.assert_not_called()
+
+
+# ALREADY VERIFIED USER
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_already_verified(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+    db_session,
+) -> None:
+    user = User(
+        first_name="Verified",
+        last_name="User",
+        email="verified@example.com",
+        password_hash=hash_password("StrongPassword1!"),
+        is_email_verified=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": "verified@example.com"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "success"
+    assert "verification email has been sent" in data["message"]
+
+    mock_send_email.assert_not_called()
+
+
+# VALIDATION ERROR
+async def test_resend_verification_email_validation_error(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": "not-an-email"},
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+
+    assert data["status"] == "error"
+    assert "message" in data
+
+
+# RATE LIMIT TEST
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_rate_limit(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+) -> None:
+    payload = {"email": "ratelimit@example.com"}
+
+    for _ in range(10):
+        await client.post("/api/v1/auth/resend-verification-email", json=payload)
+
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json=payload,
+    )
+
+    assert response.status_code == 429
+
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Rate limit exceeded"
 
 # ---------------------------------------------------------------------------
 # Login endpoint tests
