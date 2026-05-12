@@ -21,6 +21,7 @@ from app.core.token import (
     create_refresh_token,
     hash_token,
 )
+from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -32,7 +33,6 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.models.refresh_tokens import RefreshToken
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
     authenticate_with_google,
