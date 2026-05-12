@@ -39,3 +39,9 @@ class GoogleOAuthError(Exception):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+
+
+class PlatformTemplateNotFoundError(Exception):
+    """Raised when a referenced platform template does not exist."""
+
+    pass
