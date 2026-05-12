@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    ACCESS_COOKIE: str = "access_token"
     REFRESH_COOKIE: str = "refresh_token"
 
     @model_validator(mode="after")
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
 
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "http://localhost:3000"
     ALLOWED_ORIGINS: list[str] | str = []
 
     @field_validator("ALLOWED_ORIGINS", mode="before")

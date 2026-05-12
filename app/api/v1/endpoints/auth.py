@@ -1,4 +1,5 @@
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -40,6 +41,7 @@ from app.services.auth_service import (
     refresh_session,
     request_password_reset,
     reset_password,
+    set_access_cookie,
     set_refresh_cookie,
     signin,
     signup,
@@ -469,42 +471,28 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
 
 @router.get(
     "/google/callback",
-    response_model=SuccessResponse[LoginResponse],
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     summary="Handle Google OAuth callback",
     description=(
-        "Exchanges the Google authorization code for user information, then "
-        "creates or signs in the corresponding Social Badge account."
+        "Exchanges the Google authorization code for user information, "
+        "creates or signs in the corresponding Social Badge account, "
+        "then redirects the browser to the frontend. Successful authentication "
+        "redirects to the frontend onboarding placeholder page, while OAuth "
+        "failures redirect to the frontend login page with an error message."
     ),
     responses={
-        200: {
-            "description": "Google authentication completed successfully",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "status": "success",
-                        "message": "Google authentication successful.",
-                        "data": {
-                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                            "user": {
-                                "id": "123e4567-e89b-12d3-a456-426614174000",
-                                "first_name": "Jane",
-                                "last_name": "Doe",
-                                "email": "jane@example.com",
-                                "is_email_verified": True,
-                                "profile_photo_url": "https://example.com/photo.jpg",
-                                "created_at": "2026-05-09T05:28:33Z",
-                                "updated_at": "2026-05-09T05:28:33Z",
-                            },
-                        },
-                    }
+        307: {
+            "description": "Browser redirected to the frontend success or error page",
+            "headers": {
+                "Location": {
+                    "description": (
+                        "Frontend URL used to continue the OAuth flow. "
+                        "Success redirects to FRONTEND_URL/coming-soon and "
+                        "errors redirect to FRONTEND_URL/login?error=..."
+                    ),
+                    "schema": {"type": "string"},
                 }
             },
-        },
-        400: {"model": ErrorResponse, "description": "Google OAuth failed"},
-        409: {
-            "model": ErrorResponse,
-            "description": "Google sign-in could not be safely linked",
         },
     },
 )
@@ -516,11 +504,15 @@ async def google_callback(
     redis: RedisClient,
     code: str = Query(..., description="Google authorization code"),
     state: str = Query(..., description="OAuth state used to prevent CSRF"),
-) -> SuccessResponse[LoginResponse]:
+) -> RedirectResponse:
     try:
-        user, is_new_user = await authenticate_with_google(session, redis, code, state)
+        user, _ = await authenticate_with_google(session, redis, code, state)
     except GoogleOAuthError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        error_query = urlencode({"error": exc.message})
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/login?{error_query}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
 
     access_token = create_access_token(user.id)
     raw_refresh_token, expire = create_refresh_token(user.id)
@@ -533,17 +525,12 @@ async def google_callback(
     session.add(refresh_token)
     await session.commit()
 
-    set_refresh_cookie(response, raw_refresh_token)
+    redirect = RedirectResponse(
+        url=f"{settings.FRONTEND_URL}/coming-soon",
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
 
-    message = (
-        "Google account connected and registration completed."
-        if is_new_user
-        else "Google authentication successful."
-    )
-    return SuccessResponse(
-        message=message,
-        data=LoginResponse(
-            access_token=access_token,
-            user=UserResponse.model_validate(user),
-        ),
-    )
+    set_access_cookie(redirect, access_token)
+    set_refresh_cookie(redirect, raw_refresh_token)
+
+    return redirect
