@@ -4,20 +4,30 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.api.deps import DBSession, RedisClient
+from app.core.config import settings
 from app.core.exceptions import (
     AccountLockedError,
     EmailConflictError,
     EmailNotVerifiedError,
     GoogleOAuthError,
     InvalidCredentialsError,
+    InvalidPasswordResetTokenError,
+    InvalidRefreshTokenError,
 )
 from app.core.rate_limit import limiter
-from app.core.token import hash_token
+from app.core.token import (
+    create_access_token,
+    create_refresh_token,
+    hash_token,
+)
+from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
+    RefreshResponse,
+    ResetPasswordRequest,
     SignupRequest,
     UserResponse,
     VerifyEmailRequest,
@@ -26,7 +36,10 @@ from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
     authenticate_with_google,
     build_google_auth_url,
+    logout_session,
+    refresh_session,
     request_password_reset,
+    reset_password,
     set_refresh_cookie,
     signin,
     signup,
@@ -111,6 +124,51 @@ async def register(
 
 
 @router.post(
+    "/reset-password",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Reset Organizer Password",
+    responses={
+        200: {
+            "description": "Password reset successful",
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Token is invalid or expired",
+        },
+        422: {
+            "model": ErrorResponse,
+            "description": "Validation error in the payload",
+        },
+        429: {
+            "model": ErrorResponse,
+            "description": "Too many requests",
+        },
+    },
+)
+@limiter.limit("5/minute")
+async def reset_organizer_password(
+    request: Request,
+    payload: ResetPasswordRequest,
+    session: DBSession,
+    redis: RedisClient,
+) -> SuccessResponse[None]:
+    """Reset a user's password using a valid password reset token."""
+    try:
+        await reset_password(session, redis, payload)
+    except InvalidPasswordResetTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="token is invalid or expired",
+        ) from exc
+
+    return SuccessResponse(
+        message="Password reset successful. Please proceed to login.",
+        data=None,
+    )
+
+
+@router.post(
     "/login",
     response_model=SuccessResponse[LoginResponse],
     status_code=status.HTTP_200_OK,
@@ -187,8 +245,106 @@ async def login(
     return SuccessResponse(
         message="Login successful",
         data=LoginResponse(
-            access_token=access_token, user=UserResponse.model_validate(user)
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
         ),
+    )
+
+
+@router.post(
+    "/refresh",
+    response_model=SuccessResponse[RefreshResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Refresh access token",
+    responses={
+        200: {
+            "description": "Token refreshed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Token refreshed",
+                        "data": {
+                            "access_token": "eyJhbGciOiJIIsInR5cCI6IkpXVCJ9.ey..."
+                        },
+                    }
+                }
+            },
+        },
+        401: {
+            "model": ErrorResponse,
+            "description": "Invalid, expired, or missing refresh token",
+        },
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+    },
+)
+@limiter.limit("10/minute")
+async def refresh(
+    request: Request,
+    response: Response,
+    session: DBSession,
+    redis: RedisClient,
+) -> SuccessResponse[RefreshResponse]:
+    refresh_token = request.cookies.get(settings.REFRESH_COOKIE)
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token missing",
+        )
+
+    auth_header = request.headers.get("authorization")
+    access_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header.split(" ", 1)[1]
+
+    try:
+        new_access, new_refresh = await refresh_session(
+            session, redis, refresh_token, access_token
+        )
+    except InvalidRefreshTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        ) from exc
+
+    set_refresh_cookie(response, new_refresh)
+
+    return SuccessResponse(
+        message="Token refreshed",
+        data=RefreshResponse(access_token=new_access),
+    )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Logout user",
+    responses={
+        204: {"description": "Logout successful (no content)"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+    },
+)
+@limiter.limit("10/minute")
+async def logout(
+    request: Request,
+    response: Response,
+    session: DBSession,
+    redis: RedisClient,
+) -> None:
+    refresh_token = request.cookies.get(settings.REFRESH_COOKIE)
+
+    auth_header = request.headers.get("authorization")
+    access_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header.split(" ", 1)[1]
+
+    await logout_session(session, redis, refresh_token, access_token)
+
+    response.delete_cookie(
+        key=settings.REFRESH_COOKIE,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.COOKIE_SAMESITE,
     )
 
 
@@ -313,7 +469,7 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
 
 @router.get(
     "/google/callback",
-    response_model=SuccessResponse[UserResponse],
+    response_model=SuccessResponse[LoginResponse],
     status_code=status.HTTP_200_OK,
     summary="Handle Google OAuth callback",
     description=(
@@ -329,13 +485,17 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
                         "status": "success",
                         "message": "Google authentication successful.",
                         "data": {
-                            "id": "123e4567-e89b-12d3-a456-426614174000",
-                            "name": "Jane Doe",
-                            "email": "jane@example.com",
-                            "is_email_verified": True,
-                            "profile_photo_url": "https://example.com/photo.jpg",
-                            "created_at": "2026-05-09T05:28:33Z",
-                            "updated_at": "2026-05-09T05:28:33Z",
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "user": {
+                                "id": "123e4567-e89b-12d3-a456-426614174000",
+                                "first_name": "Jane",
+                                "last_name": "Doe",
+                                "email": "jane@example.com",
+                                "is_email_verified": True,
+                                "profile_photo_url": "https://example.com/photo.jpg",
+                                "created_at": "2026-05-09T05:28:33Z",
+                                "updated_at": "2026-05-09T05:28:33Z",
+                            },
                         },
                     }
                 }
@@ -351,15 +511,29 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
 @limiter.limit("10/minute")
 async def google_callback(
     request: Request,
+    response: Response,
     session: DBSession,
     redis: RedisClient,
     code: str = Query(..., description="Google authorization code"),
     state: str = Query(..., description="OAuth state used to prevent CSRF"),
-) -> SuccessResponse[UserResponse]:
+) -> SuccessResponse[LoginResponse]:
     try:
         user, is_new_user = await authenticate_with_google(session, redis, code, state)
     except GoogleOAuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    access_token = create_access_token(user.id)
+    raw_refresh_token, expire = create_refresh_token(user.id)
+
+    refresh_token = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(raw_refresh_token),
+        expires_at=expire,
+    )
+    session.add(refresh_token)
+    await session.commit()
+
+    set_refresh_cookie(response, raw_refresh_token)
 
     message = (
         "Google account connected and registration completed."
@@ -368,5 +542,8 @@ async def google_callback(
     )
     return SuccessResponse(
         message=message,
-        data=UserResponse.model_validate(user),
+        data=LoginResponse(
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
+        ),
     )

@@ -14,13 +14,24 @@ from app.core.exceptions import (
     EmailNotVerifiedError,
     GoogleOAuthError,
     InvalidCredentialsError,
+    InvalidPasswordResetTokenError,
 )
 from app.core.security import hash_password, verify_password
-from app.core.token import store_google_oauth_state
+from app.core.token import (
+    generate_token,
+    get_password_reset_user_id,
+    store_google_oauth_state,
+    store_password_reset_token,
+)
 from app.models.auth_provider import AuthProvider
 from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, LoginRequest, SignupRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+)
 from app.services.auth_service import (
     _exchange_google_code,
     _extract_google_id_token_subject,
@@ -32,6 +43,7 @@ from app.services.auth_service import (
     increment_failed_attempts,
     request_password_reset,
     reset_attempts,
+    reset_password,
     signin,
     signup,
 )
@@ -43,6 +55,14 @@ def _make_payload(email: str = "jane@example.com") -> SignupRequest:
         last_name="Doe",
         email=email,
         password="StrongPassword1!",  # noqa: S106
+    )
+
+
+def _make_reset_payload(token: str) -> ResetPasswordRequest:
+    return ResetPasswordRequest(
+        token=token,
+        new_password="NewStrongPassword123!",  # noqa: S106
+        confirm_password="NewStrongPassword123!",  # noqa: S106
     )
 
 
@@ -147,6 +167,102 @@ async def test_signup_rejects_duplicate_email(
     duplicate = _make_payload("duplicate@example.com")
     with pytest.raises(EmailConflictError):
         await signup(db_session, fake_redis, duplicate)
+
+
+async def test_reset_password_updates_user_password(
+    db_session: AsyncSession, fake_redis: FakeAsyncRedis
+) -> None:
+    user = User(
+        first_name="Reset User",
+        last_name="user",
+        email="reset@example.com",
+        password_hash=hash_password("OldStrongPassword123!"),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    raw_token, token_hash = generate_token()
+    await store_password_reset_token(fake_redis, token_hash, str(user.id))
+
+    await reset_password(db_session, fake_redis, _make_reset_payload(raw_token))
+
+    result = await db_session.execute(select(User).where(User.id == user.id))
+    updated_user = result.scalars().first()
+
+    assert updated_user is not None
+    assert updated_user.password_hash is not None
+    assert verify_password("NewStrongPassword123!", updated_user.password_hash) is True
+    assert verify_password("OldStrongPassword123!", updated_user.password_hash) is False
+
+
+async def test_reset_password_consumes_reset_token(
+    db_session: AsyncSession, fake_redis: FakeAsyncRedis
+) -> None:
+    user = User(
+        first_name="Token User",
+        last_name="User",
+        email="token-reset@example.com",
+        password_hash=hash_password("OldStrongPassword123!"),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    raw_token, token_hash = generate_token()
+    await store_password_reset_token(fake_redis, token_hash, str(user.id))
+
+    await reset_password(
+        db_session,
+        fake_redis,
+        _make_reset_payload(raw_token),
+    )
+
+    remaining_user_id = await get_password_reset_user_id(fake_redis, token_hash)
+
+    assert remaining_user_id is None
+
+
+async def test_reset_password_rejects_invalid_token(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    payload = _make_reset_payload("missing-token")
+
+    with pytest.raises(InvalidPasswordResetTokenError):
+        await reset_password(db_session, fake_redis, payload)
+
+
+async def test_reset_password_rejects_token_for_missing_user(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    raw_token, token_hash = generate_token()
+    missing_user_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    await store_password_reset_token(fake_redis, token_hash, missing_user_id)
+
+    with pytest.raises(InvalidPasswordResetTokenError):
+        await reset_password(
+            db_session,
+            fake_redis,
+            _make_reset_payload(raw_token),
+        )
+
+
+async def test_reset_password_rejects_malformed_user_id(
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    raw_token, token_hash = generate_token()
+    await store_password_reset_token(fake_redis, token_hash, "not-a-uuid")
+
+    with pytest.raises(InvalidPasswordResetTokenError):
+        await reset_password(
+            db_session,
+            fake_redis,
+            _make_reset_payload(raw_token),
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -75,7 +75,10 @@ async def validation_exception_handler(
             content=ErrorResponse(message="Validation Error").model_dump(),
         )
 
-    msg = errors[0]["msg"]
+    err = errors[0]
+    loc_parts = [str(item) for item in err["loc"] if item != "body"]
+    loc = " ".join(part.replace("_", " ").title() for part in loc_parts)
+    msg = err["msg"]
 
     if msg.startswith("Value error, "):
         msg = msg.replace("Value error, ", "")
@@ -83,11 +86,13 @@ async def validation_exception_handler(
         msg = msg.split(":")[-1].strip()
 
     if msg:
-        msg = msg[0].upper() + msg[1:]
+        msg = msg[0].lower() + msg[1:]
+
+    full_message = f"{loc}: {msg}" if loc else msg.capitalize()
 
     return JSONResponse(
         status_code=422,
-        content=ErrorResponse(message=msg).model_dump(),
+        content=ErrorResponse(message=full_message).model_dump(),
     )
 
 

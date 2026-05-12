@@ -6,6 +6,10 @@ class EmailDeliveryError(Exception):
     pass
 
 
+class InvalidPasswordResetTokenError(Exception):
+    pass
+
+
 class AccountLockedError(Exception):
     """Exception raised for locked account (HTTP 423)."""
 
@@ -20,6 +24,12 @@ class InvalidCredentialsError(Exception):
 
 class EmailNotVerifiedError(Exception):
     """Exception raised when a user attempts to login without verifying their email."""
+
+    pass
+
+
+class InvalidRefreshTokenError(Exception):
+    """Exception raised when a refresh token is invalid, expired, or revoked."""
 
     pass
 

@@ -1,19 +1,22 @@
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import ANY, AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fakeredis import FakeAsyncRedis
 from httpx import AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
+from app.core.token import generate_token, store_password_reset_token
 from app.models.user import User
+from app.schemas.auth import ResetPasswordRequest
 
 
 @pytest.fixture
@@ -101,6 +104,180 @@ async def test_signup_endpoint_rate_limit(
 
     # 11th request should be rate-limited
     response = await client.post("/api/v1/auth/signup", json=valid_signup_payload)
+    assert response.status_code == 429
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Rate limit exceeded"
+
+
+def test_reset_password_request() -> None:
+    data = {
+        "token": "reset-token",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "NewStrongPassword123!",
+    }
+
+    req = ResetPasswordRequest(**data)
+
+    assert req.token == "reset-token"  # noqa: S105
+    assert req.new_password == "NewStrongPassword123!"  # noqa: S105
+    assert req.confirm_password == "NewStrongPassword123!"  # noqa: S105
+
+
+def test_reset_password_request_rejects_password_mismatch() -> None:
+    data = {
+        "token": "reset-token",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "DifferentStrongPassword123!",
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        ResetPasswordRequest(**data)
+
+    assert "Passwords do not match" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "invalid_password,expected_error",
+    [
+        ("short1!", "Password must be at least 8 characters long"),
+        ("nouppercase123!", "Password must contain at least one uppercase letter"),
+        ("NOLOWERCASE123!", "Password must contain at least one lowercase letter"),
+        ("NoNumbersHere!", "Password must contain at least one number"),
+        ("NoSpecialChar123", "Password must contain at least one special character"),
+    ],
+)
+def test_reset_password_request_invalid(
+    invalid_password: str,
+    expected_error: str,
+) -> None:
+    data = {
+        "token": "reset-token",
+        "new_password": invalid_password,
+        "confirm_password": invalid_password,
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        ResetPasswordRequest(**data)
+
+    assert expected_error in str(exc_info.value)
+
+
+def test_reset_password_request_rejects_empty_token() -> None:
+    data = {
+        "token": "",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "NewStrongPassword123!",
+    }
+
+    with pytest.raises(ValidationError):
+        ResetPasswordRequest(**data)
+
+
+async def test_reset_password_endpoint_success(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    user = User(
+        first_name="API Reset User",
+        last_name="User",
+        email="api-reset@example.com",
+        password_hash=hash_password("OldStrongPassword123!"),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    raw_token, token_hash = generate_token()
+    await store_password_reset_token(fake_redis, token_hash, str(user.id))
+
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": raw_token,
+            "new_password": "NewStrongPassword123!",
+            "confirm_password": "NewStrongPassword123!",
+        },
+    )
+
+    await db_session.refresh(user)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == "Password reset successful. Please proceed to login."
+    assert data["data"] is None
+    assert user.password_hash is not None
+    assert verify_password("NewStrongPassword123!", user.password_hash) is True
+
+
+async def test_reset_password_endpoint_invalid_token(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "missing-token",
+            "new_password": "NewStrongPassword123!",
+            "confirm_password": "NewStrongPassword123!",
+        },
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "token is invalid or expired"
+
+
+async def test_reset_password_endpoint_rejects_password_mismatch(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "reset-token",
+            "new_password": "NewStrongPassword123!",
+            "confirm_password": "DifferentPassword123!",
+        },
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Passwords do not match"
+
+
+async def test_reset_password_endpoint_rejects_weak_password(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "reset-token",
+            "new_password": "weak",
+            "confirm_password": "weak",
+        },
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["status"] == "error"
+    assert "password must be at least 8 characters long" in data["message"].lower()
+
+
+async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
+    payload = {
+        "token": "missing-token",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "NewStrongPassword123!",
+    }
+
+    for _ in range(5):
+        await client.post("/api/v1/auth/reset-password", json=payload)
+
+    response = await client.post("/api/v1/auth/reset-password", json=payload)
+
     assert response.status_code == 429
     data = response.json()
     assert data["status"] == "error"
@@ -347,9 +524,17 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
     assert "prompt" not in query
 
 
+@patch("app.api.v1.endpoints.auth.hash_token")
+@patch("app.api.v1.endpoints.auth.create_refresh_token")
+@patch("app.api.v1.endpoints.auth.create_access_token")
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
 async def test_google_callback_success(
-    mock_authenticate: AsyncMock, client: AsyncClient
+    mock_authenticate: AsyncMock,
+    mock_create_access: AsyncMock,
+    mock_create_refresh: AsyncMock,
+    mock_hash: AsyncMock,
+    client: AsyncClient,
+    db_session: AsyncSession,
 ) -> None:
     user = User(
         id=uuid.uuid4(),
@@ -361,7 +546,17 @@ async def test_google_callback_success(
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
+    db_session.add(user)
+    await db_session.commit()
+
     mock_authenticate.return_value = (user, False)
+    mock_create_access.return_value = "test_access_token"  # noqa: S105
+    mock_create_refresh.return_value = (
+        "test_refresh_token",
+        datetime.now(UTC) + timedelta(days=30),
+    )  # noqa: S105
+    mock_hash.return_value = "hashed_token"  # noqa: S105
 
     response = await client.get(
         "/api/v1/auth/google/callback?code=test-code&state=test-state"
@@ -371,13 +566,10 @@ async def test_google_callback_success(
     data = response.json()
     assert data["status"] == "success"
     assert data["message"] == "Google authentication successful."
-    assert data["data"]["email"] == "google@example.com"
-    mock_authenticate.assert_awaited_once_with(
-        ANY,
-        ANY,
-        "test-code",
-        "test-state",
-    )
+    assert data["data"]["access_token"] == "test_access_token"  # noqa: S105
+    assert data["data"]["user"]["email"] == "google@example.com"
+    assert data["data"]["user"]["first_name"] == "Google"
+    assert data["data"]["user"]["last_name"] == "User"
 
 
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
@@ -402,3 +594,76 @@ async def test_google_callback_returns_error_response(
         "test-code",
         "test-state",
     )
+
+
+@patch("app.api.v1.endpoints.auth.refresh_session", new_callable=AsyncMock)
+async def test_refresh_token_endpoint_success(
+    mock_refresh: AsyncMock, client: AsyncClient
+) -> None:
+    mock_refresh.return_value = ("new_access_token", "new_raw_refresh_token")
+
+    client.cookies.set(settings.REFRESH_COOKIE, "old_refresh_token")
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == "Token refreshed"
+    assert data["data"]["access_token"] == "new_access_token"  # noqa: S105
+
+    mock_refresh.assert_awaited_once_with(ANY, ANY, "old_refresh_token", None)
+
+    # Verify cookie was set
+    assert settings.REFRESH_COOKIE in response.cookies
+    assert response.cookies[settings.REFRESH_COOKIE] == "new_raw_refresh_token"
+
+
+async def test_refresh_token_endpoint_missing_cookie(client: AsyncClient) -> None:
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Refresh token missing"
+
+
+@patch("app.api.v1.endpoints.auth.refresh_session", new_callable=AsyncMock)
+async def test_refresh_token_endpoint_invalid_token(
+    mock_refresh: AsyncMock, client: AsyncClient
+) -> None:
+    from app.core.exceptions import InvalidRefreshTokenError
+
+    mock_refresh.side_effect = InvalidRefreshTokenError
+
+    client.cookies.set(settings.REFRESH_COOKIE, "invalid_refresh_token")
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Invalid or expired refresh token"
+
+
+@patch("app.api.v1.endpoints.auth.logout_session", new_callable=AsyncMock)
+async def test_logout_endpoint_success(
+    mock_logout: AsyncMock, client: AsyncClient
+) -> None:
+    client.cookies.set(settings.REFRESH_COOKIE, "some_refresh_token")
+
+    response = await client.post(
+        "/api/v1/auth/logout", headers={"Authorization": "Bearer some_access_token"}
+    )
+
+    assert response.status_code == 204
+    assert response.text == ""
+
+    mock_logout.assert_awaited_once_with(
+        ANY, ANY, "some_refresh_token", "some_access_token"
+    )
+
+    # Verify cookie was deleted
+    set_cookie_header = response.headers.get("set-cookie", "")
+    assert settings.REFRESH_COOKIE in set_cookie_header
+    assert "Max-Age=0" in set_cookie_header or "expires=" in set_cookie_header.lower()

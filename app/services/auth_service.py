@@ -3,12 +3,15 @@ import base64
 import binascii
 import json
 import logging
+from datetime import UTC, datetime
 from urllib.parse import urlencode
+from uuid import UUID
 
 import httpx
 from fastapi import Response
+from jose import JWTError, jwt
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,13 +23,17 @@ from app.core.exceptions import (
     EmailNotVerifiedError,
     GoogleOAuthError,
     InvalidCredentialsError,
+    InvalidPasswordResetTokenError,
+    InvalidRefreshTokenError,
 )
 from app.core.security import hash_password, verify_password
 from app.core.token import (
+    blacklist_token,
     create_access_token,
     create_refresh_token,
     generate_token,
     get_google_oauth_state,
+    get_password_reset_user_id,
     hash_token,
     store_google_oauth_state,
     store_password_reset_token,
@@ -35,7 +42,12 @@ from app.core.token import (
 from app.models.auth_provider import AuthProvider
 from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, LoginRequest, SignupRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+)
 from app.services.email_service import (
     send_account_lock_email,
     send_password_reset_email,
@@ -102,6 +114,38 @@ async def signup(
     return user, email_sent
 
 
+async def reset_password(
+    session: AsyncSession,
+    redis: Redis,
+    payload: ResetPasswordRequest,
+) -> None:
+    """Reset a user's password and invalidate existing sessions."""
+    token_hash = hash_token(payload.token)
+    user_id = await get_password_reset_user_id(redis, token_hash)
+
+    if user_id is None:
+        raise InvalidPasswordResetTokenError
+
+    try:
+        parsed_user_id = UUID(user_id)
+    except ValueError as exc:
+        raise InvalidPasswordResetTokenError from exc
+
+    result = await session.execute(select(User).where(User.id == parsed_user_id))
+    user = result.scalars().first()
+
+    if user is None:
+        raise InvalidPasswordResetTokenError
+
+    user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == parsed_user_id)
+    )
+    await session.flush()
+    await session.refresh(user)
+    await session.commit()
+
+
 async def signin(
     session: AsyncSession,
     redis: Redis,
@@ -156,6 +200,101 @@ async def signin(
     await session.commit()
 
     return existing_user, access_token, raw_refresh_token
+
+
+async def _blacklist_access_token_if_valid(
+    redis: Redis, access_token: str | None
+) -> None:
+    if not access_token:
+        return
+    try:
+        payload = await asyncio.to_thread(
+            jwt.decode,
+            access_token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except JWTError:
+        return
+
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if not jti or not exp:
+        return
+
+    remaining = int(exp) - int(datetime.now(UTC).timestamp())
+    if remaining > 0:
+        await blacklist_token(redis, jti, remaining)
+
+
+async def refresh_session(
+    session: AsyncSession,
+    redis: Redis,
+    raw_refresh_token: str,
+    access_token: str | None,
+) -> tuple[str, str]:
+    token_hash_str = await asyncio.to_thread(hash_token, raw_refresh_token)
+
+    result = await session.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash_str)
+    )
+    refresh_token_obj = result.scalars().first()
+
+    if not refresh_token_obj:
+        raise InvalidRefreshTokenError
+
+    if refresh_token_obj.is_revoked:
+        raise InvalidRefreshTokenError
+
+    # Ensure timezone awareness for comparison
+    expires_at = refresh_token_obj.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    if expires_at < datetime.now(UTC):
+        raise InvalidRefreshTokenError
+
+    user = await session.get(User, refresh_token_obj.user_id)
+    if not user:
+        raise InvalidRefreshTokenError
+
+    await _blacklist_access_token_if_valid(redis, access_token)
+
+    new_raw_refresh, new_expire = create_refresh_token(user.id)
+    new_refresh_obj = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(new_raw_refresh),
+        expires_at=new_expire,
+    )
+    session.add(new_refresh_obj)
+
+    refresh_token_obj.is_revoked = True
+
+    new_access_token = create_access_token(user.id)
+
+    await session.commit()
+
+    return new_access_token, new_raw_refresh
+
+
+async def logout_session(
+    session: AsyncSession,
+    redis: Redis,
+    raw_refresh_token: str | None,
+    access_token: str | None,
+) -> None:
+    if raw_refresh_token:
+        token_hash_str = await asyncio.to_thread(hash_token, raw_refresh_token)
+        result = await session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == token_hash_str)
+        )
+        refresh_token_obj = result.scalars().first()
+        if refresh_token_obj and not refresh_token_obj.is_revoked:
+            refresh_token_obj.is_revoked = True
+            await session.commit()
+
+    await _blacklist_access_token_if_valid(redis, access_token)
 
 
 def set_refresh_cookie(response: Response, refresh_token: str) -> None:
@@ -431,10 +570,10 @@ async def _upsert_google_user(
             names = name.split(maxsplit=1) if name and name.strip() else []
             if names:
                 first_name = names[0]
-                last_name = names[1] if len(names) > 1 else ""
+                last_name = names[1] if len(names) > 1 else None
             else:
                 first_name = email.split("@")[0]
-                last_name = ""
+                last_name = None
 
             user = User(
                 first_name=first_name,

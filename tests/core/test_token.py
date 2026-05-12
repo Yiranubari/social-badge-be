@@ -11,8 +11,10 @@ from app.core.token import (
     create_access_token,
     create_refresh_token,
     generate_token,
+    get_password_reset_user_id,
     get_verified_user_id,
     hash_token,
+    store_password_reset_token,
     store_verification_token,
 )
 
@@ -75,6 +77,44 @@ async def test_expired_token_returns_none(fake_redis: FakeAsyncRedis) -> None:
 
 async def test_invalid_token_returns_none(fake_redis: FakeAsyncRedis) -> None:
     result = await get_verified_user_id(fake_redis, "nonexistent_hash")
+    assert result is None
+
+
+async def test_stored_password_reset_token_is_retrievable(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    raw_token, token_hash = generate_token()
+    user_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    await store_password_reset_token(fake_redis, token_hash, user_id)
+    first_lookup = await get_password_reset_user_id(fake_redis, token_hash)
+    second_lookup = await get_password_reset_user_id(fake_redis, token_hash)
+
+    assert raw_token != token_hash
+    assert first_lookup == user_id
+    assert second_lookup is None
+
+
+async def test_expired_password_reset_token_returns_none(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    raw_token, token_hash = generate_token()
+    user_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    await fake_redis.set(f"pwd_reset:{token_hash}", user_id, ex=1)
+    await asyncio.sleep(1.5)
+
+    result = await get_password_reset_user_id(fake_redis, token_hash)
+
+    assert raw_token != token_hash
+    assert result is None
+
+
+async def test_invalid_password_reset_token_returns_none(
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    result = await get_password_reset_user_id(fake_redis, "missing_hash")
+
     assert result is None
 
 
