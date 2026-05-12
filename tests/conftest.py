@@ -20,6 +20,8 @@ from app.core.config import settings
 from app.db.redis import get_redis_client
 from app.db.session import get_session
 from app.main import app  # noqa: E402
+
+# Import all models to ensure they're registered with Base.metadata
 from app.models.base import Base
 
 
@@ -39,6 +41,7 @@ def create_db_engine() -> AsyncEngine:
 
 @pytest.fixture(scope="session")
 async def setup_db() -> AsyncIterator[None]:
+    # Create all tables in the test database
     test_engine = create_db_engine()
 
     async with test_engine.begin() as conn:

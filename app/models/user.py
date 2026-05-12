@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from uuid_utils import uuid7
 
 from app.models.base import Base
+from app.modules.templates.models.organiser_templates_model import OrganiserTemplate
 
 if TYPE_CHECKING:
     from app.models.auth_provider import AuthProvider
@@ -45,5 +46,12 @@ class User(Base):
 
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    # Relationship to OrganiserTemplate
+    organiser_templates: Mapped[list["OrganiserTemplate"]] = relationship(
+        "OrganiserTemplate",
+        back_populates="organiser",
         cascade="all, delete-orphan",
     )
