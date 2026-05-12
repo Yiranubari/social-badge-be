@@ -22,11 +22,11 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     RefreshResponse,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     SignupRequest,
     UserResponse,
     VerifyEmailRequest,
-    ResendVerificationRequest,
 )
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
@@ -35,11 +35,11 @@ from app.services.auth_service import (
     logout_session,
     refresh_session,
     request_password_reset,
+    resend_verification_email,
     reset_password,
     set_refresh_cookie,
     signin,
     signup,
-    resend_verification_email,
 )
 
 router = APIRouter()

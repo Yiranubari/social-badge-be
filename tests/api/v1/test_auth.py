@@ -19,8 +19,6 @@ from app.models.user import User
 from app.schemas.auth import ResetPasswordRequest
 
 
-
-
 @pytest.fixture
 def valid_signup_payload() -> dict[str, str]:
     return {
@@ -294,15 +292,6 @@ async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
 # ------------------------------------------------------
 # RESEND VERIFICATION EMAIL TESTS
 # ------------------------------------------------------
-
-from unittest.mock import AsyncMock, patch
-from httpx import AsyncClient
-import pytest
-
-from app.models.user import User
-from app.core.security import hash_password
-
-
 @pytest.fixture
 async def unverified_resend_user(db_session) -> dict[str, str]:
     creds = {

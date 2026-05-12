@@ -45,9 +45,9 @@ from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     SignupRequest,
-    ResendVerificationRequest,
 )
 from app.services.email_service import (
     send_account_lock_email,
@@ -132,7 +132,7 @@ async def resend_verification_email(
 
     if user.is_email_verified:
         return
-    
+
     # Generate & store new verification token
     raw_token, token_hash = generate_token()
     await store_verification_token(redis, token_hash, str(user.id))
